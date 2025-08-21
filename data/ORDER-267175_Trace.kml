@@ -1,0 +1,699 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<kml xmlns='http://www.opengis.net/kml/2.2'>
+<Document>
+  <name>ORDER-267175</name>
+  <Placemark>
+    <name>BFMH-0021</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.385046,43.644719,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFMH-0050</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.386122,43.647277,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFMH-0045</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.39524,43.645486,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#4107</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.39518,43.645458,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#4103</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.400109,43.644464,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5122</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.403984,43.643666,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5117</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.409714,43.642519,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5082</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.412692,43.641842,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#9536</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.415231,43.642087,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#6151</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.421764,43.638735,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#N496</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.42716,43.638897,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5753</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.436242,43.637564,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5747</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.437394,43.640468,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>THES-6233</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.446025,43.63884,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#6408</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.453451,43.640073,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>P877025P</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.47035,43.637467,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5696</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.474847,43.636267,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5695X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.477032,43.632603,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>P876235P</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.481132,43.631248,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5693</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.484661,43.63038,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5692</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.489489,43.629337,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5691</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.491244,43.628724,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5690</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.495478,43.627823,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>10882-75</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.500017,43.626825,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>P876162P</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.507266,43.62521,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5687</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.510478,43.624485,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5686X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.514072,43.62367,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>421</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.51806,43.622747,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5684 &lt;OPEN&gt;HP#1193&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.522008,43.621899,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5683</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.52638,43.620872,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5682</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.52945,43.620126,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5681X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.530772,43.619786,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5679 &lt;OPEN&gt;HP1425A&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.531756,43.619545,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5678 &lt;OPEN&gt;HP1415&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.533314,43.619235,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5677 HP1543</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.537854,43.618362,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP1589 &lt;OPEN&gt;HP1569&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.53964,43.617925,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5675 HP1633-A</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.546001,43.616377,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>5674 HP29</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.545295,43.615113,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>POLEP19 HP15</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.543979,43.612803,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5010 HP549</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.543329,43.611864,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5540 HP249</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.542368,43.609503,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5671 HP431</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.5418,43.607181,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5680 HP449</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.543245,43.606852,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5697</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.546774,43.606067,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5486</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.547792,43.606558,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CDSH13899</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.547256,43.605914,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0372</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.551939,43.609671,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP# P704</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.55763,43.60881,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFMH-0536</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.561011,43.609851,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CDSH14618</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.564836,43.613869,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0854</name>
+    <description><![CDATA[Beanfield Manhole/Handwell without Splice Box]]></description>
+    <Point>
+      <coordinates>-79.565633,43.614337,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0853</name>
+    <description><![CDATA[Beanfield Manhole/Handwell without Splice Box]]></description>
+    <Point>
+      <coordinates>-79.566983,43.616383,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP41&lt;OPEN&gt;P96&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Wood With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.565257,43.618672,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP31&lt;OPEN&gt;P140&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Wood With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.562455,43.619836,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP21&lt;OPEN&gt;160&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Wood With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.5602,43.621931,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP12&lt;OPEN&gt;P178&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Wood With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.559676,43.624217,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP11&lt;OPEN&gt;P180&lt;CLOSE&gt;</name>
+    <description><![CDATA[Utility Pole Wood With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.559637,43.624423,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0464</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.55908,43.62548,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CHH-0063</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.559008,43.627176,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CHH-0062</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.561922,43.627081,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CHH-0061</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.562997,43.628551,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP45X4</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.564223,43.629953,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP64X3</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.565782,43.630792,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>P875893P</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.566803,43.63318,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP116X2</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.567056,43.63378,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP120X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.567182,43.634058,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5711X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.566478,43.63619,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP250</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.569107,43.637027,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CP1-?43</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.57083,43.639364,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP324</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.571894,43.641632,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP358X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.572828,43.64378,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP380X2</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.573995,43.645299,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5718X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.5771,43.646311,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP444X2</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.578715,43.649167,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP575</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.57952,43.651914,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP577</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.579643,43.65218,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>JL09LCX1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.581248,43.655651,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP707</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.582703,43.658838,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP718</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.585112,43.663461,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5734</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.585732,43.664824,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>HP5397</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.587766,43.665561,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>POLE4679</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.587481,43.665866,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>MHH-0004</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.590501,43.667159,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CP1H16409</name>
+    <description><![CDATA[Beanfield Manhole/Handwell without Splice Box]]></description>
+    <Point>
+      <coordinates>-79.590485,43.667927,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5738</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.591659,43.669631,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>POLE 801</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.593662,43.672975,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>831X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.594023,43.673581,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5746</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.59421,43.673881,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>THES-MH862</name>
+    <description><![CDATA[Hydro Manhole with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.591265,43.676709,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>4570</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.5925,43.679849,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>K-072</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.592928,43.680776,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>12467-75</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.594358,43.683818,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5731X2</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.594717,43.686612,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5730X1</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.592661,43.686561,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5729</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.58912,43.687183,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>CMH-1429</name>
+    <description><![CDATA[Beanfield Manhole/Handwell with Splice Box]]></description>
+    <Point>
+      <coordinates>-79.58699,43.687743,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5727</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.580237,43.689231,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5760</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.579143,43.68777,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark>
+    <name>SITE5761</name>
+    <description><![CDATA[Utility Pole Concrete With Splice Box]]></description>
+    <Point>
+      <coordinates>-79.5785,43.685606,0</coordinates>
+    </Point>
+  </Placemark>
+</Document>
+</kml>

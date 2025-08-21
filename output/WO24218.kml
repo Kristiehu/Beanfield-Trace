@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>WO24218</name>
+  <Style id="pointStyle">
+    <IconStyle>
+      <scale>1.1</scale>
+      <Icon>
+        <href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href>
+      </Icon>
+    </IconStyle>
+  </Style>
+  <Placemark>
+    <name>BFMH-0021</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: 200 Front St W<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.385046,43.644719,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFMH-0050</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: 215 King (Simcoe)<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.386122,43.647277,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFMH-0045</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: 460 King (Spadina)<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.39524,43.645486,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#4107</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: W of King St W and Spadina Ave<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.39518,43.645458,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#4103</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: King St W and Portland St<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.400109,43.644464,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5122</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: N SIDE OF KING ST W 105M E OF TECUMSETH ST<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.403984,43.643666,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5117</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.409714,43.642519,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5082</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: 915 King St W<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.412692,43.641842,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#9536</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: SE CORNER SHAW &amp; SHANK<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.415231,43.642087,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#6151</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: 101 Jefferson Ave<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.421764,43.638735,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#N496</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: SE CORNER OF KING ST W and DUFFERIN ST<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.42716,43.638897,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5753</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.436242,43.637564,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#5747</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: NW Corner of Queen St W &amp; Jameson Ave<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.437394,43.640468,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>THES-6233</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: NE CORNER OF QUEEN ST W and RONCESVALLES AVE<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.446025,43.63884,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CC#6408</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: W SIDE OF INDIAN RD_ 17M S OF MERRICK ST<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.453451,43.640073,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>P876162P</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Utility Pole Concrete With Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.507266,43.62521,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CDSH13899</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: SW CORNER OF BROWNS LINE and VALERMO DR<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.547256,43.605914,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0372</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: 60M S OF EVANS AVE_ E OF GAIR DR<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.551939,43.609671,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>HP# P704</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Utility Pole Concrete With Splice Box<br/><b>Address</b>: The West Mall &amp; Evans Ave<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.55763,43.60881,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFMH-0536</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: The West Mall &amp; Sherway Dr<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.561011,43.609851,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CDSH14618</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: W SIDE OF THE WEST MALL; 226M N OF THE QUEENSWAY<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.564836,43.613869,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0854</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell without Splice Box<br/><b>Address</b>: W Side of The West Mall;74m S of The Railway<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.565633,43.614337,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0853</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell without Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.566983,43.616383,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>HP41(P96)</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Utility Pole Wood With Splice Box<br/><b>Address</b>: HP41(P96)<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.565257,43.618672,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>HP31(P140)</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Utility Pole Wood With Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.562455,43.619836,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>HP21(160)</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Utility Pole Wood With Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.5602,43.621931,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>HP12(P178)</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Utility Pole Wood With Splice Box<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.559676,43.624217,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>BFHW-0464</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: E SIDE OF THE 185 WESTMALL_ 125M N OF PAXMAN RD<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.55908,43.62548,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CHH-0063</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: SW CORNER OF THE WEST MALL and THE WEST MALL CRESC<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.559008,43.627176,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CHH-0062</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: S SIDE OF DUNDAS ST W_ AT NEILSON DR<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.561922,43.627081,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CHH-0061</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: W SIDE OF NEILSON DR_ 138M N OF DUNDAS ST W<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.562997,43.628551,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CP1-?43</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: W SIDE OF RENFORTH DR_ 30M N OF TOLEDO DR<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.57083,43.639364,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>MHH-0004</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: W SIDE OF RENFORTH DR_ S OF 401 OFF RAMP<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.590501,43.667159,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CP1H16409</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell without Splice Box<br/><b>Address</b>: E SIDE OF RENFORTH DR_ 12M N OF RENFORTH 427 S RAMP<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.590485,43.667927,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>THES-MH862</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Hydro Manhole with Splice Box<br/><b>Address</b>: SW CORNER OF RENFORTH DR and CARLINGVIEW DR<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.591265,43.676709,0</coordinates></Point>
+  </Placemark>
+  <Placemark>
+    <name>CMH-1429</name>
+    <styleUrl>#pointStyle</styleUrl>
+    <description><![CDATA[<b>Feature</b>: Beanfield Manhole/Handwell with Splice Box<br/><b>Address</b>: SW CORNER OF DIXON RD and SKYWAY AVE<br/><b>City</b>: Toronto<br/><b>Source</b>: JSON]]></description>
+    <Point><coordinates>-79.58699,43.687743,0</coordinates></Point>
+  </Placemark>
+</Document>
+</kml>

@@ -504,59 +504,37 @@ st.subheader("2) Generate outputs")
 
 # --- Generate workbook & KML side by side ---
 col_gen1, col_gen2 = st.columns(2)
-from fibre_trace import generate_xlsx_with_changes  # (json_path, out_xlsx, changes_path, trace_sheet="Fibre Trace", changes_sheet="Remove & Add")
 
 # ---------- Remove & Add: CSV preview + Generate Excel ----------
+from remove_add_algo import transform_remove_add
 with st.container(border=True):
-    st.markdown("### Remove & Add Info")
+    st.markdown("### Remove & Add — CSV Generator")
 
-    disabled = (up_json is None) or (up_wo_csv is None)
-    if st.button("Generate", type="primary", key="btn_ra_generate", disabled=disabled):
+    ra_file = st.file_uploader("Upload Remove & Add input (CSV or XLSX)", type=["csv","xlsx"], key="ra_input")
+
+    if st.button("Generate", type="primary", key="btn_ra_generate", disabled=(ra_file is None)):
         try:
-            # 1) Persist the JSON to a temp file
-            up_json.seek(0)
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tj:
-                tj.write(up_json.read())
-                json_path = Path(tj.name)
+            ra_file.seek(0)
+            if ra_file.name.lower().endswith(".csv"):
+                df_in = pd.read_csv(ra_file)
+            else:
+                df_in = pd.read_excel(ra_file)
 
-            # 2) Persist the Remove&Add file to a temp file (keep its extension)
-            up_wo_csv.seek(0)
-            ext = ".xlsx" if up_wo_csv.name.lower().endswith(".xlsx") else ".csv"
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tc:
-                tc.write(up_wo_csv.read())
-                changes_path = Path(tc.name)
+            df_out = transform_remove_add(df_in)
 
-            # 3) Output path (single Excel with two sheets)
-            out_xlsx = json_path.with_name("Remove & Add.xlsx")
+            st.caption("Preview (first 200 rows)")
+            st.dataframe(df_out.head(200), use_container_width=True, hide_index=True)
 
-            # 4) Generate workbook:
-            #    Sheet 1 -> "Fibre Trace"
-            #    Sheet 2 -> "Remove & Add"
-            df_trace = generate_xlsx_with_changes(
-                json_path=json_path,
-                out_xlsx=out_xlsx,
-                changes_path=changes_path,
-                trace_sheet="Fibre Trace",
-                changes_sheet="Remove & Add",
+            st.download_button(
+                "Download Remove & Add.csv",
+                df_out.to_csv(index=False, encoding="utf-8-sig"),
+                file_name="Remove & Add.csv",
+                mime="text/csv",
+                key="dl_remove_add_csv",
             )
-
-            # 5) Download button
-            with open(out_xlsx, "rb") as fh:
-                st.download_button(
-                    "Download Remove & Add.xlsx",
-                    fh,
-                    file_name="Remove & Add.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_ra_workbook",
-                )
-
-            # 6) Optional preview of the first sheet (Fibre Trace)
-            st.caption("Preview of ‘Fibre Trace’ (first 200 rows)")
-            st.dataframe(df_trace.head(200), use_container_width=True, hide_index=True)
-
         except Exception as e:
-            st.error(f"Failed to generate workbook: {e}")
-# --------------------- Activity Overview Map + Fibre Trace + KML ---------------------
+            st.error(f"Failed to generate CSV: {e}")
+
 
 with col_gen1:
     # --------------------- Activity Overview Map ---------------------

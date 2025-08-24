@@ -488,52 +488,62 @@ else:
     actions_df = _actions_from_wo(wo_df)
     details_df = _details_from_json(up_json)
 
-    # Assume you already have:
-# up_wo_csv = st.file_uploader("Upload WO CSV", type=["csv"], key="wo_csv")
-# up_json   = st.file_uploader("Upload circuit JSON", type=["json"], key="circ_json")
-
-
-
-
-# up_wo_csv.seek(0) # Reset buffer for reading
-# up_json.seek(0) # Reset buffer for reading
-
-
 # --------------------------------- Generate ----------------------------------
 st.subheader("2) Generate outputs")
 
 # --- Generate workbook & KML side by side ---
 col_gen1, col_gen2 = st.columns(2)
+# ========================= CSV → Styled Excel Generator =========================
 
-# ---------- Remove & Add: CSV preview + Generate Excel ----------
-from remove_add_algo import transform_remove_add
+from remove_add_algo import transform_fibre_action_summary_grid, transform_fibre_action_actions, fibre_action_excel_bytes, read_actions_from_wo_file
+# --------------------- Fibre Action Button ---------------------
 with st.container(border=True):
-    st.markdown("### Remove & Add — CSV Generator")
+    st.markdown("Fibre Action")
 
-    ra_file = st.file_uploader("Upload Remove & Add input (CSV or XLSX)", type=["csv","xlsx"], key="ra_input")
-
-    if st.button("Generate", type="primary", key="btn_ra_generate", disabled=(ra_file is None)):
+    if st.button("Generate", type="primary", key="btn_fibre_action", disabled=(up_wo_csv is None)):
         try:
-            ra_file.seek(0)
-            if ra_file.name.lower().endswith(".csv"):
-                df_in = pd.read_csv(ra_file)
-            else:
-                df_in = pd.read_excel(ra_file)
+            # 1) Read the uploaded WO CSV using your existing tolerant reader
+            wo_df = read_uploaded_table(up_wo_csv)
 
-            df_out = transform_remove_add(df_in)
+            # 2) Build Summary grid (4 columns: L1,V1,L2,V2) to match trace_action.csv
+            #    We also reuse sidebar meta variables if present; fall back to blanks
+            meta = {
+                "order_id":      globals().get("order_number", ""),      # e.g., "ORDER-267175"
+                "wo_id":         "WO",                                   # (put your real WO number here if you have it)
+                "designer_name": globals().get("designer_name", ""),
+                "designer_phone":globals().get("designer_phone", ""),
+                "date":          globals().get("date", ""),
+                "a_end":         globals().get("a_end", ""),
+                "z_end":         globals().get("z_end", ""),
+                "details":       "OSP DF",
+            }
+            summary_df = transform_fibre_action_summary_grid(wo_df, meta)
 
-            st.caption("Preview (first 200 rows)")
-            st.dataframe(df_out.head(200), use_container_width=True, hide_index=True)
+            # 3) Build Fibre Action list (Action/Description table)
+            actions_df = read_actions_from_wo_file(up_wo_csv)
 
+            # 4) Preview in tabs (like your other generators)
+            t1, t2 = st.tabs(["Summary", "Fibre Action"])
+            with t1:
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            with t2:
+                st.dataframe(actions_df, use_container_width=True, hide_index=True)
+
+            # 5) Build styled Excel and expose download button (same button style)
+            xbytes = fibre_action_excel_bytes(summary_df, actions_df, title="fibre_action")
+            st.success(f"Fibre Action generated: {len(actions_df)} actions.")
             st.download_button(
-                "Download Remove & Add.csv",
-                df_out.to_csv(index=False, encoding="utf-8-sig"),
-                file_name="Remove & Add.csv",
-                mime="text/csv",
-                key="dl_remove_add_csv",
+                "Download fibre_action.xlsx",
+                data=xbytes,
+                file_name="fibre_action.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_fibre_action_xlsx",
             )
+
         except Exception as e:
-            st.error(f"Failed to generate CSV: {e}")
+            st.error(f"Failed to generate Fibre Action: {e}")
+
+
 
 
 with col_gen1:

@@ -261,47 +261,6 @@ def write_styled_excel(df: pd.DataFrame, urls, out_xlsx: Path, sheet="Sheet1"):
                 # ensure non-location rows have no link
                 ws.write(r + 1, col_map, "")
 
-def generate_xlsx_with_changes(json_path: str | Path, out_xlsx: str | Path, changes_path: str | Path, main_sheet: str = "Sheet1", changes_sheet: str = "Remove/Add"):
-    """
-    Build the main fibre_trace Excel (same as generate_xlsx) and also write a second
-    sheet named 'Remove/Add' from a provided CSV/XLSX.
-    """
-    df, urls = build_overview_df(Path(json_path))
-
-    out_xlsx = Path(out_xlsx)
-    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter") as writer:
-        # ----- Main sheet (same styling as before) -----
-        df.to_excel(writer, index=False, sheet_name=main_sheet)
-        wb  = writer.book
-        ws  = writer.sheets[main_sheet]
-
-        # Column widths (match earlier)
-        widths = {"A":16,"B":80,"C":10,"D":12,"E":8,"F":14,"G":12,"H":12,"I":10,"J":10,"K":8,"L":8,"M":14}
-        for col, w in widths.items():
-            ws.set_column(f"{col}:{col}", w)
-
-        ws.freeze_panes(1, 0)
-
-        nrows, ncols = df.shape
-        headers = [{"header": h} for h in df.columns]
-        ws.add_table(0, 0, nrows, ncols - 1, {
-            "columns": headers,
-            "style": "Table Style Medium 9",
-            "banded_rows": True,
-        })
-
-        # Red + bold for Equipment Location, hyperlink Map It only on those
-        fmt_loc = wb.add_format({"bold": True, "font_color": "white", "bg_color": "#D32F2F"})
-        col_map = df.columns.get_loc("Map It")
-        for r in range(nrows):
-            is_loc = (df.iat[r, 0] == "Equipment Location")
-            if is_loc:
-                ws.set_row(r + 1, None, fmt_loc)
-                if urls[r]:
-                    ws.write_url(r + 1, col_map, urls[r], string="Google Maps")
-            else:
-                ws.write(r + 1, col_map, "")
-
 def generate_xlsx(json_path: str | Path, out_xlsx: str | Path) -> pd.DataFrame:
     """Public entry: build dataframe and write only the Excel file (no CSV/KML)."""
     df, urls = build_overview_df(Path(json_path))

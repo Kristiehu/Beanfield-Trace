@@ -491,12 +491,13 @@ else:
 # --------------------------------- Generate ----------------------------------
 st.subheader("2) Generate outputs")
 
-# --- Generate workbook & KML side by side ---
-col_gen1, col_gen2 = st.columns(2)
-# ========================= CSV → Styled Excel Generator =========================
+# Fibre Action Button
+from remove_add_algo import (
+    read_uploaded_table,
+    transform_fibre_action_summary_grid,
+    transform_fibre_action_actions,
+    fibre_action_excel_bytes)
 
-from remove_add_algo import transform_fibre_action_summary_grid, transform_fibre_action_actions, fibre_action_excel_bytes, read_actions_from_wo_file
-# --------------------- Fibre Action Button ---------------------
 with st.container(border=True):
     st.markdown("Fibre Action")
 
@@ -506,10 +507,9 @@ with st.container(border=True):
             wo_df = read_uploaded_table(up_wo_csv)
 
             # 2) Build Summary grid (4 columns: L1,V1,L2,V2) to match trace_action.csv
-            #    We also reuse sidebar meta variables if present; fall back to blanks
             meta = {
-                "order_id":      globals().get("order_number", ""),      # e.g., "ORDER-267175"
-                "wo_id":         "WO",                                   # (put your real WO number here if you have it)
+                "order_id":      globals().get("order_number", ""),
+                "wo_id":         globals().get("wo_number", "WO"),
                 "designer_name": globals().get("designer_name", ""),
                 "designer_phone":globals().get("designer_phone", ""),
                 "date":          globals().get("date", ""),
@@ -520,16 +520,28 @@ with st.container(border=True):
             summary_df = transform_fibre_action_summary_grid(wo_df, meta)
 
             # 3) Build Fibre Action list (Action/Description table)
-            actions_df = read_actions_from_wo_file(up_wo_csv)
+            actions_df = transform_fibre_action_actions(wo_df)
+
+            # 3.1) **NEW** – simplify Description to match your reference style
+            # (removes GPS, long addresses, IDs, extra punctuation; collapses whitespace)
+            from remove_add_algo import simplify_description
+            if "Description" in actions_df.columns:
+                actions_df["Description"] = actions_df["Description"].map(simplify_description)
+            else:
+                actions_df.insert(1, "Description", "—")
+
+            # Always include SAP column for alignment (blank by default)
+            if "SAP" not in actions_df.columns:
+                actions_df["SAP"] = ""
 
             # 4) Preview in tabs (like your other generators)
             t1, t2 = st.tabs(["Summary", "Fibre Action"])
             with t1:
                 st.dataframe(summary_df, use_container_width=True, hide_index=True)
             with t2:
-                st.dataframe(actions_df, use_container_width=True, hide_index=True)
+                st.dataframe(actions_df[["Action", "Description", "SAP"]], use_container_width=True, hide_index=True)
 
-            # 5) Build styled Excel and expose download button (same button style)
+            # 5) Build styled Excel and expose download button
             xbytes = fibre_action_excel_bytes(summary_df, actions_df, title="fibre_action")
             st.success(f"Fibre Action generated: {len(actions_df)} actions.")
             st.download_button(
@@ -544,8 +556,48 @@ with st.container(border=True):
             st.error(f"Failed to generate Fibre Action: {e}")
 
 
+# Fibre Trace Button
+from fibre_trace import generate_xlsx 
 
+with st.container(border=True):
+    st.markdown("Fibre Trace")
 
+    if st.button("Generate", type="primary", key="btn_fibre_trace", disabled=not ready):
+        try:
+            # Save uploaded JSON to a temp file
+            up_json.seek(0)
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                tmp.write(up_json.read())
+                json_path = Path(tmp.name)
+
+            # Output path (temp)
+            out_xlsx = json_path.with_name("fibre_trace.xlsx")
+
+            # Generate Excel only (no CSV/KML)
+            df_trace = generate_xlsx(json_path, out_xlsx)
+
+            # Download Excel
+            with open(out_xlsx, "rb") as fh:
+                st.download_button(
+                    "Download Fibre Trace (Excel)",
+                    fh,
+                    file_name="fibre_trace.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_fibre_trace_xlsx",
+                )
+
+            # Preview (optional)
+            st.success(f"Fibre Trace generated: {len(df_trace)} rows.")
+            st.dataframe(df_trace, use_container_width=True, hide_index=True)
+
+        except Exception as e:
+            st.error(f"Failed to generate Fibre Trace: {e}")
+#---------------------------------------------------------------
+
+# === Generate workbook & KML side by side ===
+col_gen1, col_gen2 = st.columns(2)
+
+# left: Activity Overview Map
 with col_gen1:
     # --------------------- Activity Overview Map ---------------------
     from parse_device_sheet import main as parse_device_main  # for activity overview parsing
@@ -619,48 +671,11 @@ with col_gen1:
                 st.dataframe(df, use_container_width=True, hide_index=True)
 
             except Exception as e:
-                st.error(f"Failed to generate Activity Overview Map: {e}")
+                st.error(f"Failed to generate Activity Overview Map: {e}")    
 
-    # --------------------- Fiber Trace Button ---------------------
-     # Import the helper above (make sure fibre_trace.py is alongside app.py or in PYTHONPATH)
-    from fibre_trace import generate_xlsx  # generate(json_path, out_csv=None, out_xlsx=None, out_kml=None, ug=100, ar=0)
-    # --- inside your UI layout ---
-    with st.container(border=True):
-        st.markdown("Fibre Trace")
+    # -----------------------------------------------------------------
 
-        if st.button("Generate", type="primary", key="btn_fibre_trace", disabled=not ready):
-            try:
-                # Save uploaded JSON to a temp file
-                up_json.seek(0)
-                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-                    tmp.write(up_json.read())
-                    json_path = Path(tmp.name)
-
-                # Output path (temp)
-                out_xlsx = json_path.with_name("fibre_trace.xlsx")
-
-                # Generate Excel only (no CSV/KML)
-                df_trace = generate_xlsx(json_path, out_xlsx)
-
-                # Download Excel
-                with open(out_xlsx, "rb") as fh:
-                    st.download_button(
-                        "Download Fibre Trace (Excel)",
-                        fh,
-                        file_name="fibre_trace.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_fibre_trace_xlsx",
-                    )
-
-                # Preview (optional)
-                st.success(f"Fibre Trace generated: {len(df_trace)} rows.")
-                st.dataframe(df_trace, use_container_width=True, hide_index=True)
-
-            except Exception as e:
-                st.error(f"Failed to generate Fibre Trace: {e}")
-
-
-
+# right: KML
 with col_gen2:
     # --------------------- Generate KML Button ---------------------
     with st.container(border=True):
@@ -688,4 +703,4 @@ with col_gen2:
                 key="dl_kml",
             )
 
-    # --------------------- Genrate   ---------------------         
+    # -----------------------------------------------------------------        

@@ -7,22 +7,14 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-
-# ---------- small utilities ----------
-def _try_col(df: pd.DataFrame, names) -> str | None:
-    for n in names:
-        if n in df.columns:
-            return n
-    return None
-
-def _count_breaks_splices(df: pd.DataFrame, desc_col: str) -> Tuple[int, int]:
-    s = df[desc_col].astype(str).str.strip()
-    num_breaks  = int(s.str.startswith(("BREAK", "Break")).sum())
-    num_splices = int(s.str.startswith(("Splice", "splice")).sum())
-    return num_breaks, num_splices
+HEADER_FILL = PatternFill("solid", fgColor="D9D9D9")
+BOLD = Font(bold=True)
+THIN = Side(style="thin", color="AAAAAA")
+BOX  = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+CENTER = Alignment(horizontal="center", vertical="center")
+LEFT   = Alignment(horizontal="left",   vertical="center")
 
 
-# ---------- 1) Summary grid (like trace_action.csv) ----------
 def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: Dict) -> pd.DataFrame:
     """
     Produce a 4-column grid:
@@ -85,101 +77,6 @@ def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: Dict) -> pd.D
     out = pd.DataFrame(grid, columns=["Order Number: ", "ORDER-267175", "Number of Fibre Breaks: ", "6"])
     return out
 
-
-# ---------- 2) Fibre Action table (Action + Description [+ SAP blank]) ----------
-def transform_fibre_action_actions(wo_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build the Action/Description table (sorted by numeric prefix of Action).
-    If your CSV uses different names, add them to the candidate lists below.
-    """
-    action_col = _try_col(wo_df, ["Action", "WO Action#", "Wo Action#", "ACTION"])
-    desc_col   = _try_col(wo_df, ["Description","DESC","Desc","description"])
-
-    if not action_col and len(wo_df.columns):
-        action_col = wo_df.columns[0]
-    if not desc_col and len(wo_df.columns) > 1:
-        # pick a reasonable description-like column
-        for c in wo_df.columns[1:]:
-            if re.search(r"desc|name|device|work|scope|task", c, re.I):
-                desc_col = c; break
-        if not desc_col:
-            desc_col = wo_df.columns[1]
-
-    df = wo_df[[c for c in [action_col, desc_col] if c in wo_df.columns]].copy()
-    df.columns = ["Action", "Description"]
-
-    # numeric sort by the leading number in Action
-    def sort_key(x):
-        m = re.match(r"^\s*(\d+)", str(x))
-        return int(m.group(1)) if m else 10**9
-    df = df.sort_values(by="Action", key=lambda s: s.map(sort_key), kind="stable").reset_index(drop=True)
-
-    # Add SAP col (blank) like your sheet
-    df["SAP"] = ""
-    return df[["Action","Description","SAP"]]
-
-
-# ---------- 3) Write styled Excel ----------
-HEADER_FILL = PatternFill("solid", fgColor="D9D9D9")
-BOLD = Font(bold=True)
-THIN = Side(style="thin", color="AAAAAA")
-BOX  = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
-CENTER = Alignment(horizontal="center", vertical="center")
-LEFT   = Alignment(horizontal="left",   vertical="center")
-
-def _auto_width(ws):
-    widths = {}
-    for row in ws.iter_rows(values_only=True):
-        for i, v in enumerate(row, start=1):
-            widths[i] = max(widths.get(i, 10), len("" if v is None else str(v)))
-    for i, w in widths.items():
-        ws.column_dimensions[get_column_letter(i)].width = min(60, max(12, w + 2))
-
-def fibre_action_excel_bytes(summary_df: pd.DataFrame, actions_df: pd.DataFrame, title="fibre_action") -> bytes:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Summary"
-
-    # --- Summary header row (4 columns) ---
-    ws.append(list(summary_df.columns))
-    for j in range(1, ws.max_column + 1):
-        c = ws.cell(row=1, column=j)
-        c.font = BOLD; c.fill = HEADER_FILL; c.alignment = CENTER; c.border = BOX
-
-    # --- Summary body ---
-    for r in summary_df.itertuples(index=False):
-        ws.append(list(r))
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-        for c in row:
-            c.alignment = LEFT
-            c.border = BOX
-
-    # widths
-    _auto_width(ws)
-    ws.freeze_panes = "A2"
-
-    # --- Fibre Action sheet ---
-    ws2 = wb.create_sheet("Fibre Action")
-    ws2.append(list(actions_df.columns))
-    for j in range(1, ws2.max_column + 1):
-        c = ws2.cell(row=1, column=j)
-        c.font = BOLD; c.fill = HEADER_FILL; c.alignment = CENTER; c.border = BOX
-    for r in actions_df.itertuples(index=False):
-        ws2.append(list(r))
-    for row in ws2.iter_rows(min_row=2, max_row=ws2.max_row):
-        for c in row:
-            c.alignment = LEFT
-            c.border = BOX
-    # common widths + freeze header
-    for col, width in [("A",18), ("B",120), ("C",12)]:
-        ws2.column_dimensions[col].width = width
-    ws2.freeze_panes = "A2"
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf.getvalue()
-
 def read_actions_from_wo_file(uploaded_file) -> pd.DataFrame:
     raw = pd.read_csv(uploaded_file, header=None, dtype=str)
     raw.columns = range(raw.shape[1])
@@ -197,30 +94,6 @@ def read_actions_from_wo_file(uploaded_file) -> pd.DataFrame:
 
     sub = sub.fillna("")
     return sub
-
-def _strip_markup(s: str) -> str:
-    if pd.isna(s):
-        return ""
-    t = str(s)
-    repl = {
-        "<COMMA>": ", ",
-        "<COLON>": ": ",
-        "<AND>": " & ",
-        "<OPEN>": "",
-        "<CLOSE>": "",
-    }
-    for k, v in repl.items():
-        t = t.replace(k, v)
-    # spacing + punctuation cleanup
-    t = re.sub(r"\s+", " ", t)
-    t = re.sub(r"\s*([,:;|/-])\s*", r" \1 ", t)
-    t = re.sub(r"\s{2,}", " ", t)
-    # canonicalize tokens
-    t = re.sub(r"\bPMID\s*[:\-]?\s*(\d+)", r"PMID \1", t, flags=re.I)
-    t = re.sub(r"\bAptum ID\s*[:\-]?\s*([.\w-]+)", r"Aptum ID \1", t, flags=re.I)
-    return t.strip(" -|;,. ")
-
-def simplify_description(s: str) -> str:
     t = _strip_markup(s)
     # split on common separators and dedupe while keeping order
     parts = re.split(r"\s[-:]\s| ; | , ", t)
@@ -264,7 +137,6 @@ def add_simplified_description(df: pd.DataFrame) -> pd.DataFrame:
     df["Description_simplified"] = df[desc_col].apply(simplify_description)
     return df
 
-    
 def read_uploaded_table(up_file) -> pd.DataFrame:
     """Robust CSV reader used by other generators in your app.
     Accepts a file-like object from st.file_uploader.
@@ -281,134 +153,197 @@ def read_uploaded_table(up_file) -> pd.DataFrame:
     up_file.seek(0)
     return pd.read_excel(io.BytesIO(content))
 
-# ---------- Summary grid ----------
+# Replace your simplify_description with this improved version:
+def simplify_description(text: str) -> str:
+    if pd.isna(text):
+        return ""
+    s = str(text).strip()
+    if not s:
+        return ""
 
-def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: dict) -> pd.DataFrame:
-    """Return a 2xN key/value grid flattened to 4 columns: L1,V1,L2,V2.
-    Matches the style of trace_action.csv Summary sheet.
+    # Remove GPS coords, parentheses with only coords or IDs
+    s = re.sub(r"\([^)]*\)", "", s)
+
+    # Drop common noisy labels
+    s = re.sub(r"\b(Toronto|Address|PMID|Aptum ID)\s*:?\s*", "", s, flags=re.I)
+
+    # Replace custom tokens
+    s = (s.replace("<COMMA>", ", ")
+          .replace("<COLON>", ": ")
+          .replace("<AND>", " & ")
+          .replace("<OPEN>", "")
+          .replace("<CLOSE>", ""))
+
+    # Normalize punctuation/spacing
+    s = re.sub(r"\s*[,;|]\s*", ", ", s)
+    s = re.sub(r"\s{2,}", " ", s)
+    s = s.strip(" ,;-")
+
+    return s
+
+_RX_PAIR = re.compile(
+    r"^(?P<kind>Remove\s+splicing|Splice)\s+"
+    r"(?P<a_id>\d+)\s*\[\s*(?P<a1>\d+)\s*[-–]\s*(?P<a2>\d+)\s*\]\s*[-–]\s*"
+    r"(?P<b_id>\d+)\s*\[\s*(?P<b1>\d+)\s*[-–]\s*(?P<b2>\d+)\s*\]"
+    r".*$",
+    re.IGNORECASE,
+)
+
+def _fmt_span(x1: str, x2: str) -> str:
+    return f"[{int(x1)}-{int(x2)}]"
+
+def normalize_description_to_pair(text: str) -> str:
     """
-    rows = [
-        ("Order #", meta.get("order_id", "")),
-        ("WO #", meta.get("wo_id", "")),
-        ("Designer", meta.get("designer_name", "")),
-        ("Phone", meta.get("designer_phone", "")),
-        ("Date", meta.get("date", "")),
-        ("A-End", meta.get("a_end", "")),
-        ("Z-End", meta.get("z_end", "")),
-        ("Details", meta.get("details", "")),
-    ]
-    # pack into 2 columns per row, 2 rows side-by-side -> 4 columns
-    left = rows[0:len(rows)//2 + len(rows)%2]
-    right= rows[len(rows)//2 + len(rows)%2 :]
-    # pad right side if needed
-    while len(right) < len(left):
-        right.append(("", ""))
-    data = []
-    for (k1,v1),(k2,v2) in zip(left, right):
-        data.append({"L1":k1, "V1":v1, "L2":k2, "V2":v2})
-    return pd.DataFrame(data)
+    Convert verbose 'Remove splicing ... - ...' / 'Splice ... - ...' lines into the
+    compact 'BREAK/Splice PMIDA [a-b] PMIDB [a-b]' strings.
+    """
+    if text is None or (isinstance(text, float) and pd.isna(text)):
+        return ""
+    s = str(text).strip()
+    if not s:
+        return ""
 
-# ---------- Actions table ----------
+    m = _RX_PAIR.match(s.replace("–", "-"))
+    if not m:
+        # No strict match; leave as-is (or return "")
+        return s if s.lower() != "none" else ""
+
+    kind = m.group("kind").lower().strip()
+    a_id, a1, a2 = m.group("a_id"), m.group("a1"), m.group("a2")
+    b_id, b1, b2 = m.group("b_id"), m.group("b1"), m.group("b2")
+
+    if kind.startswith("remove"):
+        # BREAK and reverse order: B then A
+        return f"BREAK {b_id} {_fmt_span(b1,b2)} {a_id} {_fmt_span(a1,a2)}"
+    else:
+        # Splice, keep order: A then B
+        return f"Splice {a_id} {_fmt_span(a1,a2)} {b_id} {_fmt_span(b1,b2)}"
 
 def transform_fibre_action_actions(wo_df: pd.DataFrame) -> pd.DataFrame:
-    """Derive an Action/Description/SAP table from the WO CSV.
-    This keeps your existing logic lightweight and predictable:
-    - If the CSV already has these columns, use them directly.
-    - Else, look for any columns that look like 'Action' or 'Description'.
-    - Else, create an empty shell so the UI stays stable.
+
     """
-    cols = {c.lower(): c for c in wo_df.columns}
-
-    if {"action","description"}.issubset(cols.keys()):
-        df = wo_df[[cols["action"], cols["description"]]].copy()
-        df.columns = ["Action","Description"]
-    elif "action" in cols:
-        df = wo_df[[cols["action"]]].copy()
-        df["Description"] = ""
-    else:
-        # Minimal fallback – enumerate by row index
-        df = pd.DataFrame({
-            "Action": [f"{i+1}: Add" for i in range(len(wo_df))],
-            "Description": ["" for _ in range(len(wo_df))],
-        })
-
-    # Ensure numeric prefixes like "1: "
-    if not df["Action"].str.contains(r"^\d+:\s").any():
-        df["Action"] = [f"{i+1}: {a}" for i, a in enumerate(df["Action"].astype(str).str.replace(r"^\d+:\s*", "", regex=True))]
-
-    # Always include SAP for alignment
-    df["SAP"] = ""
-    return df[["Action","Description","SAP"]]
-
-# ---------- Description simplifier ----------
-
-def simplify_description(text: str) -> str:
-    """Make descriptions short and human-friendly like the reference sheet.
-    Rules (in order):
-      1) If empty/NaN -> "None".
-      2) Remove GPS coords, parentheses-only fragments, and long numeric IDs.
-      3) Drop noisy prefixes like 'Toronto,', 'Address:', 'PMID:', 'Aptum ID:'.
-      4) Collapse multiple separators to a single comma and space.
-      5) Trim to ~120 chars (without hard-cutting words) and strip.
+    Extract the Action/Description/SAP section and normalize Description.
+    (Uses the header-finder you already added.)
     """
-    if pd.isna(text) or str(text).strip() == "":
-        return "None"
-    s = str(text)
-    # Remove lat/long and parentheses blocks with only symbols/numbers/commas
-    s = re.sub(r"\(.*?\)", "", s)
-    s = re.sub(r"\b-?\d{2,}\.?\d*\s*,\s*-?\d{2,}\.?\d*\b", "", s)  # coords
-    # Drop noisy labels
-    s = re.sub(r"\b(Toronto|Address|PMID|Aptum ID)\s*:?\s*", "", s, flags=re.IGNORECASE)
-    # Replace special tokens
-    s = s.replace("<COMMA>", ", ").replace("<AND>", " & ")
-    s = s.replace("<OPEN>", "").replace("<CLOSE>", "")
-    # Smash repeated punctuation/spaces
-    s = re.sub(r"[;|]\s*", ", ", s)
-    s = re.sub(r"\s*[:,]\s*", ", ", s)
-    s = re.sub(r"\s{2,}", " ", s)
-    s = re.sub(r",\s*,+", ", ", s)
-    s = s.strip(" ,-")
-    # Friendly cap at ~120 chars
-    if len(s) > 120:
-        cut = s[:120].rsplit(" ", 1)[0]
-        s = f"{cut}…"
-    return s if s else "None"
+    # treat wo_df as raw grid; find the real header row where col0='Action' & col1='Description'
+    raw = pd.DataFrame(wo_df.values)
+    raw.columns = range(raw.shape[1])
 
-# ---------- Excel writer ----------
+    hdr_idx = raw.index[
+        raw.get(0).astype(str).str.strip().eq("Action") &
+        raw.get(1).astype(str).str.strip().eq("Description")
+    ]
+    if len(hdr_idx) == 0:
+        # case-insensitive fallback
+        hdr_idx = raw.index[
+            raw.get(0).astype(str).str.fullmatch(r"\s*Action\s*", case=False, na=False) &
+            raw.get(1).astype(str).str.fullmatch(r"\s*Description\s*", case=False, na=False)
+        ]
+    if len(hdr_idx) == 0:
+        return pd.DataFrame(columns=["Action", "Description", "SAP"])
 
-def fibre_action_excel_bytes(summary_df: pd.DataFrame, actions_df: pd.DataFrame, title: str = "fibre_action") -> bytes:
-    """Create a styled two-tab Excel file in-memory.
-    Tabs: 'Summary' and 'Fibre Action'.
+    start = int(hdr_idx[0]) + 1
+    sub = raw.loc[start:, [0, 1, 2]].copy()
+    sub.columns = ["Action", "Description", "SAP"]
+
+    # trim trailing blank block
+    sub = sub.fillna("")
+    mask_keep = ~(
+        sub["Action"].astype(str).str.strip().eq("") &
+        sub["Description"].astype(str).str.strip().eq("") &
+        sub["SAP"].astype(str).str.strip().eq("")
+    )
+    sub = sub.loc[mask_keep]
+
+    # normalize Description to your compact format
+    sub["Description"] = sub["Description"].map(normalize_description_to_pair)
+
+    # ensure Action numbering prefix like '1: Add' remains (or generate if missing)
+    if not sub["Action"].astype(str).str.match(r"^\s*\d+:\s").any():
+        sub["Action"] = [f"{i+1}: {a if str(a).strip() else 'Add'}"
+                         for i, a in enumerate(sub["Action"].astype(str).str.strip())]
+
+    if "SAP" not in sub.columns:
+        sub["SAP"] = ""
+
+    return sub[["Action", "Description", "SAP"]].reset_index(drop=True)
+
+def _auto_widths(ws, df, min_w=8, max_w=60, pad=2):
+    # Auto size each column using header + longest cell length
+    for col_idx, col_name in enumerate(df.columns):
+        header_w = len(str(col_name))
+        data_w = 0 if df.empty else int(df[col_name].astype(str).map(len).max())
+        width = max(header_w, data_w) + pad
+        ws.set_column(col_idx, col_idx, max(min_w, min(width, max_w)))
+
+def fibre_action_excel_bytes(summary_df: pd.DataFrame,
+                             actions_df: pd.DataFrame,
+                             title: str = "fibre_action") -> bytes:
     """
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as xw:
-        # --- Summary sheet ---
-        summary_df.to_excel(xw, sheet_name="Summary", index=False, header=["Action","Description","SAP"] if list(summary_df.columns)==[0,1,2] else True)
-        wb  = xw.book
-        ws1 = xw.sheets["Summary"]
-        header_fmt = wb.add_format({"bold": True, "bg_color": "#1f2937", "font_color": "#ffffff", "border": 1, "align": "center"})
-        body_fmt   = wb.add_format({"border":1})
-        for col, _ in enumerate(summary_df.columns):
-            ws1.set_column(col, col, 28, body_fmt)
-        ws1.set_row(0, 18, header_fmt)
+    Two sheets ('Summary', 'Fibre Action'), no styling, only auto-width columns.
+    """
+    bio = io.BytesIO()
+    # NOTE: no 'options=' here to avoid the ExcelWriter.new() error
+    with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        actions_df.to_excel(writer, sheet_name="Fibre Action", index=False)
 
-        # --- Fibre Action sheet ---
-        fa = actions_df[["Action","Description","SAP"]].copy()
-        fa.to_excel(xw, sheet_name="Fibre Action", index=False)
-        ws2 = xw.sheets["Fibre Action"]
-        hdr2 = wb.add_format({"bold": True, "bg_color": "#1f2937", "font_color": "#ffffff", "border": 1, "align": "center"})
-        cell = wb.add_format({"border":1, "text_wrap": True})
-        ws2.set_row(0, 18, hdr2)
-        ws2.set_column(0, 0, 18, cell)  # Action
-        ws2.set_column(1, 1, 70, cell)  # Description
-        ws2.set_column(2, 2, 12, cell)  # SAP
+        ws1 = writer.sheets["Summary"]
+        ws2 = writer.sheets["Fibre Action"]
+        _auto_widths(ws1, summary_df)
+        _auto_widths(ws2, actions_df)
 
-        # Freeze header rows for both sheets
-        ws1.freeze_panes(1, 0)
-        ws2.freeze_panes(1, 0)
+        # (Optional) title metadata—safe to ignore if unsupported
+        try:
+            writer.book.set_properties({"title": title})
+        except Exception:
+            pass
 
-        # Optional title property
-        wb.set_properties({"title": title})
+    bio.seek(0)
+    return bio.getvalue()
+    
+def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: dict) -> pd.DataFrame:
+    """
+    Return a 2-column key/value DataFrame for the Summary tab.
+    Overwrites the old 4-column layout.
+    """
+    # Derive counts if possible
+    desc_col = None
+    for c in wo_df.columns:
+        if "desc" in c.lower():
+            desc_col = c
+            break
+    breaks = splices = 0
+    if desc_col:
+        s = wo_df[desc_col].astype(str)
+        breaks = s.str.contains("Remove", case=False, na=False).sum()
+        splices = s.str.contains("Splice", case=False, na=False).sum()
 
-    return output.getvalue()
+    # Meta values
+    order_id = meta.get("order_id", "")
+    wo_id    = meta.get("wo_id", "")
+    designer = meta.get("designer_name", "")
+    phone    = meta.get("designer_phone", "")
+    date     = meta.get("date", "")
+    a_end    = meta.get("a_end", "")
+    z_end    = meta.get("z_end", "")
+    details  = meta.get("details", "OSP DF")
 
+    # Assemble rows in desired order
+    rows = [
+        ("Order Number:", order_id),
+        ("Work Order Number:", wo_id),
+        ("Order A to Z:", f"_{a_end}_{z_end}" if a_end and z_end else ""),
+        ("Designer:", designer),
+        ("Contact Number:", phone),
+        ("Date (dd/mm/yyyy):", date),
+        ("Details:", details),
+        ("Number of Fibre Breaks", breaks),
+        ("Number of Fibre Splices", splices),
+        ("End to End Length(m)", 0),
+        ("End to End ~ OTDR(m)", 0),
+        ("A END:", a_end),
+        ("Z END:", z_end),
+    ]
+
+    return pd.DataFrame(rows, columns=["Field", "Value"])

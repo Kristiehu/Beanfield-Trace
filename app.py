@@ -1,12 +1,12 @@
 # app.py
-import re, json, io
+import re, json, io, math, os, tempfile
 from io import BytesIO
-
 import pandas as pd
 import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from pathlib import Path
 from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json, build_details_df_from_payload
 from _to_kml import to_kml  
 
@@ -358,8 +358,6 @@ def read_uploaded_table(uploaded_file) -> pd.DataFrame:
     bio.seek(0)
     return pd.read_excel(bio, engine="openpyxl")  # last resort
 
-import math, re
-
 def _guess_latlon_cols(df):
     cols = {c.lower(): c for c in df.columns}
     lat = next((cols[c] for c in ["lat","latitude","y","lat_dd"] if c in cols), None)
@@ -506,74 +504,180 @@ st.subheader("2) Generate outputs")
 
 # --- Generate workbook & KML side by side ---
 col_gen1, col_gen2 = st.columns(2)
+from fibre_trace import generate_xlsx_with_changes  # (json_path, out_xlsx, changes_path, trace_sheet="Fibre Trace", changes_sheet="Remove & Add")
 
+# ---------- Remove & Add: CSV preview + Generate Excel ----------
+with st.container(border=True):
+    st.markdown("### Remove & Add Info")
+
+    disabled = (up_json is None) or (up_wo_csv is None)
+    if st.button("Generate", type="primary", key="btn_ra_generate", disabled=disabled):
+        try:
+            # 1) Persist the JSON to a temp file
+            up_json.seek(0)
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tj:
+                tj.write(up_json.read())
+                json_path = Path(tj.name)
+
+            # 2) Persist the Remove&Add file to a temp file (keep its extension)
+            up_wo_csv.seek(0)
+            ext = ".xlsx" if up_wo_csv.name.lower().endswith(".xlsx") else ".csv"
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tc:
+                tc.write(up_wo_csv.read())
+                changes_path = Path(tc.name)
+
+            # 3) Output path (single Excel with two sheets)
+            out_xlsx = json_path.with_name("Remove & Add.xlsx")
+
+            # 4) Generate workbook:
+            #    Sheet 1 -> "Fibre Trace"
+            #    Sheet 2 -> "Remove & Add"
+            df_trace = generate_xlsx_with_changes(
+                json_path=json_path,
+                out_xlsx=out_xlsx,
+                changes_path=changes_path,
+                trace_sheet="Fibre Trace",
+                changes_sheet="Remove & Add",
+            )
+
+            # 5) Download button
+            with open(out_xlsx, "rb") as fh:
+                st.download_button(
+                    "Download Remove & Add.xlsx",
+                    fh,
+                    file_name="Remove & Add.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_ra_workbook",
+                )
+
+            # 6) Optional preview of the first sheet (Fibre Trace)
+            st.caption("Preview of ‘Fibre Trace’ (first 200 rows)")
+            st.dataframe(df_trace.head(200), use_container_width=True, hide_index=True)
+
+        except Exception as e:
+            st.error(f"Failed to generate workbook: {e}")
+# --------------------- Activity Overview Map + Fibre Trace + KML ---------------------
 
 with col_gen1:
+    # --------------------- Activity Overview Map ---------------------
+    from parse_device_sheet import main as parse_device_main  # for activity overview parsing
     with st.container(border=True):
-        st.markdown("Generate Excel Workbook")
+        st.markdown("Activity Overview Map")
+        # The button that triggers the generation
+        if st.button("Generate", type="primary", key="btn_activity_overview", disabled=not ready):
+            # Make sure inputs are present and readable
+            wo_df, payload = require_inputs(up_wo_csv, up_json)
 
-        if st.button("Generate workbook", type="primary", key="btn_generate_workbook",disabled=not ready):
-            if not up_wo_csv or not up_json:
-                st.error("Please provide both WO.csv and the circuit JSON.")
-                st.stop()
-
-            wo_df = pd.read_csv(up_wo_csv)
-            payload = json.load(up_json)
-
-            meta = {
-                "designer_name": designer_name,
-                "designer_email": designer_email,
-                "designer_phone": designer_phone,
-                "circuit_id": circuit_id,
-                "client_name": client_name,
-                "service_type": service_type,
-                # "jira_ticket": jira_ticket,
-                # "build_type": build_type,
-                "a_end": a_end, "z_end": z_end,
-                "route_type": route_type, "device_type": device_type, "circuit_type": circuit_type,
-                "wo_id": re.sub(r"[^0-9]", "", order_number) or "WO",
-                "date": "", "details": "OSP DF",
-            }
-
-            # ensure details_df exists
+            # Try to use the exact logic from parse_device_sheet.py
             try:
-                details_df  # noqa
-            except NameError:
-                details_df = pd.DataFrame()
+                from parse_device_sheet import gather_connections, parse_device_table  # exact logic
 
-            # 1) Call existing builder
-            raw = build_excel(meta, wo_df, details_df, payload)
+            except Exception:
+                gather_connections = None
+                parse_device_table = None
 
-            # 2) Normalize to bytes; if raw is None/unknown, it falls back to a valid .xlsx
-            xlsx_bytes, ext, mime = normalize_excel_output(
-                raw, fallback_meta=meta, fallback_wo=wo_df, fallback_details=details_df
-            )
+            # Fallback gatherer if functions weren't exported in the module
+            def _fallback_gather_connections(obj):
+                out = []
+                def rec(x):
+                    if isinstance(x, dict):
+                        for k, v in x.items():
+                            if k == "Connections" and isinstance(v, str):
+                                out.append(v)
+                            else:
+                                rec(v)
+                    elif isinstance(x, list):
+                        for it in x:
+                            rec(it)
+                rec(obj)
+                return out
 
-            # Optional sanity display
-            st.write(f"Workbook bytes: {len(xlsx_bytes)}  •  Format: {ext}")
+            # Decide which gatherer we’ll use
+            _gather = gather_connections or _fallback_gather_connections
 
-            # 3) Use matching filename + MIME (prevents “file format not valid” in Excel)
-            fname = f"{order_number}_Trace{ext}"
-            st.success("Workbook created.")
-            st.download_button(
-                "Download Excel",
-                data=xlsx_bytes,
-                file_name=fname,
-                mime=mime,
-                key="btn_download_excel",
-            )
+            try:
+                conns = _gather(payload)
+                if not conns:
+                    st.error("No 'Connections' strings found in the JSON under 'Report: Splice Details'.")
+                    st.stop()
 
-            with st.expander("CSV preview", expanded=False):
-                st.dataframe(wo_df.head(50), use_container_width=True)
+                # Use the first unique string (how the script behaves)
+                conn_text = conns[0]
 
+                # If parse_device_table is available, use it; otherwise fail loudly (you want exact logic)
+                if parse_device_table is None:
+                    raise RuntimeError("`parse_device_table` not found in parse_device_sheet.py. Please export it.")
+
+                # Build the table (append_details=True keeps richer rows if your script supports it)
+                df = parse_device_table(conn_text, append_details=True)
+
+                if df is None or df.empty:
+                    st.warning("Activity Overview Map produced an empty table.")
+                    st.stop()
+
+                # Prepare CSV bytes and a preview
+                csv_bytes = df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+
+                st.success(f"Generated Activity Overview table with {len(df)} rows.")
+                st.download_button(
+                    "Download Activity Overview CSV",
+                    data=csv_bytes,
+                    file_name="activity_overview.csv",
+                    mime="text/csv",
+                    key="dl_activity_overview_csv",
+                )
+
+                # Preview (responsive, no index)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+            except Exception as e:
+                st.error(f"Failed to generate Activity Overview Map: {e}")
+
+    # --------------------- Fiber Trace Button ---------------------
+     # Import the helper above (make sure fibre_trace.py is alongside app.py or in PYTHONPATH)
+    from fibre_trace import generate_xlsx  # generate(json_path, out_csv=None, out_xlsx=None, out_kml=None, ug=100, ar=0)
+    # --- inside your UI layout ---
+    with st.container(border=True):
+        st.markdown("Fibre Trace")
+
+        if st.button("Generate", type="primary", key="btn_fibre_trace", disabled=not ready):
+            try:
+                # Save uploaded JSON to a temp file
+                up_json.seek(0)
+                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                    tmp.write(up_json.read())
+                    json_path = Path(tmp.name)
+
+                # Output path (temp)
+                out_xlsx = json_path.with_name("fibre_trace.xlsx")
+
+                # Generate Excel only (no CSV/KML)
+                df_trace = generate_xlsx(json_path, out_xlsx)
+
+                # Download Excel
+                with open(out_xlsx, "rb") as fh:
+                    st.download_button(
+                        "Download Fibre Trace (Excel)",
+                        fh,
+                        file_name="fibre_trace.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_fibre_trace_xlsx",
+                    )
+
+                # Preview (optional)
+                st.success(f"Fibre Trace generated: {len(df_trace)} rows.")
+                st.dataframe(df_trace, use_container_width=True, hide_index=True)
+
+            except Exception as e:
+                st.error(f"Failed to generate Fibre Trace: {e}")
 
 
 
 with col_gen2:
-
+    # --------------------- Generate KML Button ---------------------
     with st.container(border=True):
-        st.markdown ("Generate KML")
-        if st.button("Generate KML", type="primary", key="btn_generate_kml", disabled=not ready):
+        st.markdown ("KML")
+        if st.button("Generate", type="primary", key="btn_generate_kml", disabled=not ready):
             if not up_wo_csv or not up_json:
                 st.error("Please provide both WO.csv and the circuit JSON.")
                 st.stop()
@@ -595,3 +699,5 @@ with col_gen2:
                 mime="application/vnd.google-earth.kml+xml",
                 key="dl_kml",
             )
+
+    # --------------------- Genrate   ---------------------         

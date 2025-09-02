@@ -7,7 +7,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from pathlib import Path
-from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json, build_details_df_from_payload
+from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json # 'upload' helpers
 from _to_kml import to_kml  
 
 # --------------------------- Helpers ---------------------------

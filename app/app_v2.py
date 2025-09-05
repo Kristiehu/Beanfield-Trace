@@ -8,13 +8,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from pathlib import Path
-from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json # 'upload' helpers 
+from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json # 'upload' helpers
+from _to_kml import to_kml  
+
 from helper import (
     require_inputs,
     placemarks_from_wo_df,
     placemarks_from_payload,
     dedupe_placemarks,
-    read_uploaded_table,
+    read_uploaded_table,  # KML helpers
 )
 
 # --------------------------- Helpers ---------------------------
@@ -31,7 +33,7 @@ work_order_title = get_work_order_number(up_csv) if 'up_csv' in globals() else "
 st.title(f"Trace Builder - [{work_order_title}]")
 st.caption("Upload WO.csv + WO.json, choose options, then export the Excel report (Cover Page, Fibre Trace, Activity Overview Map, Error Report) and a colorized KML/KMZ.")
 
-# --------------------- sidebar inputs ---------------------------------------
+# --sidebar inputs
 st.sidebar.header("Project metadata")
 st.sidebar.markdown("Fill in the project metadata to generate a complete workbook.")
 with st.sidebar:
@@ -145,7 +147,7 @@ if run_json:
 
 st.subheader("2) Generate outputs")
 
-# --------------------- Fibre Action Button ------------------------------
+# Fibre Action Button
 from fiber_action import (
     read_uploaded_table,
     transform_fibre_action_summary_grid,
@@ -154,6 +156,7 @@ from fiber_action import (
     simplify_description,
 )
 from helper import extract_meta_from_label_value_df
+
 with st.container(border=True):
     st.markdown("Fibre Action")
 
@@ -224,10 +227,12 @@ with st.container(border=True):
         except Exception as e:
             st.exception(e)
             st.error(f"Failed to generate Fibre Action: {e}")
-# ------------------------------------------------------------------------
 
-# --------------------- Fibre Trace Button -------------------------------
+
+
+# Fibre Trace Button
 from fiber_trace import generate_xlsx 
+
 with st.container(border=True):
     st.markdown("Fibre Trace")
 
@@ -261,9 +266,15 @@ with st.container(border=True):
 
         except Exception as e:
             st.error(f"Failed to generate Fibre Trace: {e}")
-#-------------------------------------------------------------------------
+#---------------------------------------------------------------
 
-# --------------------- Activity Overview Map Button ---------------------
+# === Generate workbook & KML side by side ===
+# col_gen1, col_gen2 = st.columns(2)
+
+# # left: Activity Overview Map
+# with col_gen1:
+
+# --------------------- Activity Overview Map ---------------------
 from parse_device_sheet import main as parse_device_main  # for activity overview parsing
 with st.container(border=True):
     st.markdown("Activity Overview Map")
@@ -336,11 +347,12 @@ with st.container(border=True):
 
         except Exception as e:
             st.error(f"Failed to generate Activity Overview Map: {e}")    
-    # -----------------------------------------------------------------
-# ------------------------------------------------------------------------  
 
-# --------------------- Generate KML Button ------------------------------
-from _to_kml import to_kml 
+    # -----------------------------------------------------------------
+
+# # right: KML
+# with col_gen2:
+# --------------------- Generate KML Button ---------------------
 with st.container(border=True):
     st.markdown ("KML")
     if st.button("Generate", type="primary", key="btn_generate_kml", disabled=not ready):
@@ -365,4 +377,5 @@ with st.container(border=True):
             mime="application/vnd.google-earth.kml+xml",
             key="dl_kml",
         )
-# ------------------------------------------------------------------------        
+
+# -----------------------------------------------------------------        

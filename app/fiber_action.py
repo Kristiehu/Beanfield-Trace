@@ -347,3 +347,114 @@ def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: dict) -> pd.D
     ]
 
     return pd.DataFrame(rows, columns=["Field", "Value"])
+
+
+from typing import Dict, Any, List
+
+def _dig_number(container: dict, *paths: str, default: float = 0.0) -> float:
+    """
+    Try several dot-paths inside the JSON to find a numeric value.
+    Accepts numeric or string with a number embedded.
+    """
+    for path in paths:
+        cur: Any = container
+        ok = True
+        for part in path.split("."):
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                ok = False
+                break
+        if not ok:
+            continue
+        if isinstance(cur, (int, float)):
+            return float(cur)
+        if isinstance(cur, str):
+            m = re.search(r"[-+]?\d*\.?\d+", cur.replace(",", ""))
+            if m:
+                try:
+                    return float(m.group(0))
+                except ValueError:
+                    pass
+    return default
+
+def compute_fibre_action_summary_from_json(j: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Expect j to contain an array of action rows under one of:
+      - j['actions'], j['fibre_action'], j['Fibre Action'], j['FibreAction']
+    Each row should have 'Action' / 'Description' (case-insensitive).
+    Counting rules (per your example):
+      - One 'BREAK … [..] … [..]' line = 2 breaks (two ends)
+      - One 'Splice … [..] … [..]' line = 2 splices (two ends)
+    """
+    # find the actions list no matter which key you used
+    actions: List[dict] = (
+        j.get("actions")
+        or j.get("fibre_action")
+        or j.get("Fibre Action")
+        or j.get("FibreAction")
+        or []
+    )
+
+    n_breaks = 0
+    n_splices = 0
+
+    for row in actions:
+        act = str(row.get("Action") or row.get("action") or "")
+        desc = str(row.get("Description") or row.get("description") or "")
+
+        d_up = desc.upper()
+        # If it's a break line, count 2 (two ends) — but also guard for edge cases:
+        if "BREAK" in d_up:
+            # Prefer explicit pair detection if present, else assume 2
+            pair_tokens = re.findall(r"\[\s*\d+\s*-\s*\d+\s*\]", desc)
+            n_breaks += 2 if len(pair_tokens) >= 2 else max(1, len(pair_tokens) or 2)
+            continue
+
+        # If it's a splice line, count 2 (two ends)
+        if "SPLICE" in d_up:
+            pair_tokens = re.findall(r"\[\s*\d+\s*-\s*\d+\s*\]", desc)
+            n_splices += 2 if len(pair_tokens) >= 2 else max(1, len(pair_tokens) or 2)
+
+    # End-to-End lengths (try a few likely paths; adjust if your JSON differs)
+    e2e_len_m = _dig_number(
+        j,
+        "end_to_end.length_m",
+        "summary.end_to_end_m",
+        "e2e_length_m",
+        "EndToEndMeters",
+        default=0.0,
+    )
+    e2e_otdr_m = _dig_number(
+        j,
+        "end_to_end.otdr_m",
+        "summary.e2e_otdr_m",
+        "e2e_otdr_m",
+        "EndToEndOTDRMeters",
+        default=0.0,
+    )
+
+    return {
+        "Number of Fibre Breaks": float(n_breaks),
+        "Number of Fibre Splices": float(n_splices),
+        "End to End Length(m)": round(e2e_len_m, 2),
+        "End to End ~ OTDR(m)": round(e2e_otdr_m, 2),
+    }
+
+def apply_summary_counts(summary_df: pd.DataFrame, counts: Dict[str, float]) -> pd.DataFrame:
+    """
+    Expects Summary DF to have first column = label (e.g. 'Number of Fibre Breaks')
+    and second column = value. Returns an updated copy.
+    """
+    df = summary_df.copy()
+    label_col = df.columns[0]
+    value_col = df.columns[1]
+
+    for k, v in counts.items():
+        mask = df[label_col].astype(str).str.strip().eq(k)
+        if mask.any():
+            df.loc[mask, value_col] = v
+        else:
+            # If the row doesn't exist yet, append it (optional)
+            df = pd.concat([df, pd.DataFrame({label_col: [k], value_col: [v]})], ignore_index=True)
+    return d

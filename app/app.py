@@ -492,7 +492,7 @@ else:
 st.subheader("2) Generate outputs")
 
 # Fibre Action Button
-from remove_add_algo import (
+from fiber_action import (
     read_uploaded_table,
     transform_fibre_action_summary_grid,
     transform_fibre_action_actions,
@@ -524,7 +524,7 @@ with st.container(border=True):
 
             # 3.1) **NEW** – simplify Description to match your reference style
             # (removes GPS, long addresses, IDs, extra punctuation; collapses whitespace)
-            from remove_add_algo import simplify_description
+            from fiber_action import simplify_description
             if "Description" in actions_df.columns:
                 actions_df["Description"] = actions_df["Description"].map(simplify_description)
             else:
@@ -557,7 +557,7 @@ with st.container(border=True):
 
 
 # Fibre Trace Button
-from fibre_trace import generate_xlsx 
+from fiber_trace import generate_xlsx 
 
 with st.container(border=True):
     st.markdown("Fibre Trace")

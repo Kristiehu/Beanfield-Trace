@@ -5,26 +5,6 @@
 
 ---
 
-## 🚀 Features
-
-- **Work Order Parsing**
-  - Process `.csv` and `.json` work order files
-  - Extract device details, splicing information, and trace summaries
-
-- **Excel Report Generation**
-  - Create multi-sheet Excel workbooks with auto-sized columns
-  - Generate Fibre Action summaries and trace reports
-
-- **KML Export**
-  - Convert parsed data into Google Earth KML layers
-  - Style Placemarks and organize into folders for better visualization
-
-- **Algorithms**
-  - *Remove & Add* automation for splicing updates
-  - Fibre trace building and reporting
-
----
-
 ## 📂 Repository Structure
 - `README.md` — Project documentation
 - `trace_report.py` — Input Files Upload & Parse Logic

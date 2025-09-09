@@ -1,4 +1,4 @@
-# 📡 Fibre Trace Automation Toolkit
+# 📡 Fiber Trace Automation Toolkit
 
 - A collection of Python scripts and helpers for processing fibre network data, generating reports, and exporting GIS-ready files (CSV, Excel, KML).  
 - This project streamlines common workflows around work orders, splice reports, and capacity planning.

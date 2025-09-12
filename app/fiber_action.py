@@ -63,6 +63,18 @@ def _read_actions_csv(upload: Union[str, IO[bytes], bytes]) -> pd.DataFrame:
             hdr_idx = i
             break
 
+# Only treat these as valid location tokens in tails
+LOC_TOKEN_RE = re.compile(r'^(?:M#\d+[A-Z]?|D#\d+[A-Z]?|PA\d+|BFMA\d+)$', re.IGNORECASE)
+
+def _pick_location_tail(s: str) -> tuple[str, str]:
+    """Return the last 'LocA - LocB' pair where both sides look like real locations."""
+    pairs = TAIL_PAIR_RE.findall(s)
+    for left, right in reversed(pairs):
+        if LOC_TOKEN_RE.match(left) and LOC_TOKEN_RE.match(right):
+            return left, right
+    return "", ""
+
+
     if hdr_idx is not None:
         df = pd.read_csv(io.StringIO("\n".join(lines[hdr_idx:])),
                          dtype=str, keep_default_na=False)
@@ -155,14 +167,17 @@ def _parse_json_for_order(json_source: Optional[Union[str, IO[bytes], bytes]]
     return ca_order_by_box, boxes_by_pmid, pair_orient
 
 
-def _find_common_box(A: str, B: str,
-                     ca_order_by_box: Dict[str, Dict[str, int]],
-                     boxes_by_pmid: Dict[str, Set[str]],
-                     loc_hint: Optional[str]) -> Optional[str]:
+def _find_common_box(
+    A: str,
+    B: str,
+    ca_order_by_box: Dict[str, Dict[str, int]],
+    boxes_by_pmid: Dict[str, Set[str]],
+    loc_hint: Optional[str],
+) -> Optional[str]:
     """
-    Pick a splice box to order within:
-      - If loc_hint (like "M#248") is provided and both A/B exist in that box, use it.
-      - Else find a box that contains both A and B (prefer the one where A<=B already).
+    Prefer a box that contains BOTH PMIDs.
+    If loc_hint is provided and valid and contains both, use it.
+    If multiple common boxes, prefer one where A<=B by CA order.
     """
     if loc_hint and loc_hint in ca_order_by_box:
         om = ca_order_by_box[loc_hint]
@@ -170,13 +185,17 @@ def _find_common_box(A: str, B: str,
             return loc_hint
 
     common = boxes_by_pmid.get(A, set()) & boxes_by_pmid.get(B, set())
+    if not common:
+        return None
     if len(common) == 1:
         return next(iter(common))
+    # choose the first where A comes before (or equal) B
     for bx in common:
         om = ca_order_by_box.get(bx, {})
         if A in om and B in om and om[A] <= om[B]:
             return bx
-    return next(iter(common)) if common else None
+    # otherwise take a stable one
+    return sorted(common)[0]
 
 
 # =========================
@@ -208,7 +227,10 @@ def _normalize_desc(action: str, desc: str,
     locA = locB = ""
     tail_pairs = TAIL_PAIR_RE.findall(s)
     if tail_pairs:
-        locA, locB = tail_pairs[-1]
+
+
+        # find real location tail (ignore 'Box - 400D5' etc.)
+        locA, locB = _pick_location_tail(s)
     loc_hint = locA if (locA == locB and locA) else None
 
     # Order by CA list within chosen box
@@ -218,21 +240,27 @@ def _normalize_desc(action: str, desc: str,
         if A in om and B in om and om[A] > om[B]:
             A, B, Ar, Br = B, A, Br, Ar
     else:
-        # fall back to explicit orientation, if we saw "PMID A -- Splice -- PMID B" in JSON
+        # fallback 1: explicit JSON orientation, if seen
         key = frozenset((A, B))
         if key in pair_orient:
             a, b = pair_orient[key]
-            if (A, B) != (a, b):
-                # swap spans accordingly
-                if {A, B} == {a, b}:
-                    if A == b:
-                        A, B, Ar, Br = B, A, Br, Ar
+            if {A, B} == {a, b} and A == b:
+                A, B, Ar, Br = B, A, Br, Ar
+        else:
+            # fallback 2: if only one PMID is known anywhere, keep the known one on the left
+            a_boxes = boxes_by_pmid.get(A, set())
+            b_boxes = boxes_by_pmid.get(B, set())
+            if a_boxes and not b_boxes:
+                pass  # A already on the left
+            elif b_boxes and not a_boxes:
+                A, B, Ar, Br = B, A, Br, Ar
 
     # Build normalized output; keep location pair if available
     core = f"{verb} {A} [{Ar}] {B} [{Br}]"
     if locA and locB:
         core += f" {locA} - {locB}"
     return core
+
 
 
 def _assign_color(action: str, description: str) -> str:

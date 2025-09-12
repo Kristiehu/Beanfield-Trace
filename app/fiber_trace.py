@@ -1,18 +1,20 @@
-
+# filename: fiber_trace.py
 from __future__ import annotations
 from pathlib import Path
-import re, json
+from typing import Dict, Iterable, List, Optional, Tuple
+import json, re
 import pandas as pd
-from typing import List, Tuple, Optional
 
-# Exact schema to match reference
+# =========================
+# Schema
+# =========================
 COLUMNS = [
     "Detail Item",
     "Report: Splice DetailsConnections",
     "# of Fbrs",
     "WO Action#",
     "Length",
-    "~OTDR Length",
+    "OTDR Length",      
     "Meter Marks",
     "Eq Location",
     "EQ Type",
@@ -22,247 +24,333 @@ COLUMNS = [
     "Map It",
 ]
 
-# Token decoding used in QSP-style exports
-TOKENS = [
-    ("<COMMA>", ", "),
-    ("<COLON>", ":"),
-    ("<OPEN>", "("),
-    ("<CLOSE>", ")"),
-    ("<AND>", "&"),
-]
+# =========================
+# Utilities
+# =========================
+_RX_PMID         = re.compile(r"\bPMID\s*:\s*(\d+)", re.I)
+_RX_APTUM_F      = re.compile(r"\bAptum\s*ID\s*:\s*\.?F(\d+)", re.I)
+_RX_LEN_CALC     = re.compile(r"(?:Calculated|Cable Length Calculated)\s*:\s*([0-9]+)", re.I)
+_RX_LEN_OTDR     = re.compile(r"(?:OTDR|Cable Length\s*:?OTDR)\s*[: ]\s*([0-9]+)", re.I)
+_RX_RANGE        = re.compile(r"\[([0-9]+)\s*-\s*([0-9]+)\]")
+_RX_FX           = re.compile(r"\.F(\d+)", re.I)
 
-def decode_tokens(s: str) -> str:
-    if not isinstance(s, str):
-        return s
-    out = s
-    for src, dst in TOKENS:
-        out = out.replace(src, dst)
-    return re.sub(r"\s{2,}", " ", out).strip()
-
-def split_sections(connections: str) -> list[str]:
-    txt = connections.replace("\r\n", "\n").replace("\r", "\n")
-    return [p.strip() for p in re.split(r"\n\.\n", txt) if p.strip()]
-
-def extract_latlon(text: str):
-    t = decode_tokens(text)
-    m = re.search(r"([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)", t)
-    return (float(m.group(1)), float(m.group(2))) if m else (None, None)
-
-def guess_eq_location(desc: str) -> str:
-    d = desc.lower()
-    if "bfmh" in d or "beanfield manhole" in d: return "BFMH"
-    if "hmh" in d or "hydro manhole" in d: return "HMH"
-    return ""
-
-def guess_eq_type(equip_line: str) -> str:
-    e = equip_line.lower()
-    if "osp splice box" in e or "generic osp splice box" in e: return "FOSC"
-    return ""
-
-def parse_existing_splice_fibers(line: str):
-    line = decode_tokens(line)
-    total, found = 0, False
-    for a,b in re.findall(r"\[([0-9]+)\s*-\s*([0-9]+)\]", line):
-        found = True
-        a,b = int(a), int(b)
-        if b >= a: total += (b - a + 1)
-    return total if found else None
-
-def parse_cableinfo_metrics(text: str):
-    s = decode_tokens(text)
-    # Length
-    length = ""
-    m_len = re.search(r"Cable Length\s*:\s*([0-9]+)", s, flags=re.I)
-    if m_len:
-        length = m_len.group(1)
-    # ~OTDR Length
-    otdr = ""
-    m_otdr = re.search(r"OTDR\s*;\s*([0-9]+)", s, flags=re.I)
-    if m_otdr:
-        otdr = m_otdr.group(1)
-    # Meter Marks
-    mm = ""
-    m_mm = re.search(r"OTDR\s*-\s*([0-9]+)", s, flags=re.I)
-    if m_mm:
-        mm = m_mm.group(1)
-    return length, otdr, mm
-
-def find_location_line(lines: list[str]) -> int:
-    # Prefer a line with lat/lon; else anything with 'address'
-    for i, ln in enumerate(lines):
-        if re.search(r"[+-]?\d+\.\d+\s*,\s*[+-]?\d+\.\d+", decode_tokens(ln)):
-            return i
-    for i, ln in enumerate(lines):
-        if "address" in ln.lower():
-            return i
-    return 0
-
-def section_to_rows(section_text: str):
-    rows: list[dict] = []
-    lines = [ln for ln in section_text.splitlines() if ln.strip() and ln.strip() != "."]
-    if not lines: 
-        return rows, None
-
-    # Location line + hyperlink URL
-    loc_idx = find_location_line(lines)
-    loc_line = decode_tokens(lines[loc_idx])
-    lat, lon = extract_latlon(loc_line)
-    map_url = f"https://maps.google.com/?q={lat},{lon}" if lat is not None and lon is not None else ""
-    eq_loc  = guess_eq_location(loc_line)
-
-    # 1) Equipment Location row (bold+red later; hyperlink only here)
-    rows.append({
-        "Detail Item": "Equipment Location",
-        "Report: Splice DetailsConnections": loc_line,  # full address (no dots)
-        "# of Fbrs": "",
-        "WO Action#": "",
-        "Length": "",
-        "~OTDR Length": "",
-        "Meter Marks": "",
-        "Eq Location": eq_loc,
-        "EQ Type": "",
-        "Activity": "",
-        "Tray": "",
-        "Slot": "",
-        "Map It": "Google Maps" if map_url else "",
-    })
-
-    # 2) Equipment row
-    equip_line = ""
-    if loc_idx + 1 < len(lines):
-        equip_line = decode_tokens(lines[loc_idx + 1])
-    if not equip_line or ("splice box" not in equip_line.lower() and not re.search(r"\\b\\d{3}D\\b", equip_line)):
-        for ln in lines:
-            if "splice box" in ln.lower() or re.search(r"\\b\\d{3}D\\b", ln):
-                equip_line = decode_tokens(ln); break
-    eq_type = guess_eq_type(equip_line)
-
-    if equip_line:
-        rows.append({
-            "Detail Item": "Equipment",
-            "Report: Splice DetailsConnections": equip_line,
-            "# of Fbrs": "",
-            "WO Action#": "",
-            "Length": "",
-            "~OTDR Length": "",
-            "Meter Marks": "",
-            "Eq Location": eq_loc,
-            "EQ Type": eq_type,
-            "Activity": "",
-            "Tray": "",
-            "Slot": "",
-            "Map It": "",  # no link for non-location rows
-        })
-
-    # 3) Remaining lines
-    for idx, ln in enumerate(lines):
-        if idx in (loc_idx, loc_idx + 1): 
+def _compact_numbers(nums: Iterable[int]) -> str:
+    """Return '3,5-8,11' from [3,5,6,7,8,11]."""
+    s = sorted(set(nums))
+    if not s:
+        return ""
+    out: List[str] = []
+    start = prev = s[0]
+    for n in s[1:]:
+        if n == prev + 1:
+            prev = n
             continue
-        text = decode_tokens(ln.strip())
-        if not text or text == ".": 
+        # flush
+        if start == prev:
+            out.append(f"{start}")
+        else:
+            out.append(f"{start}-{prev}")
+        start = prev = n
+    # flush last
+    if start == prev:
+        out.append(f"{start}")
+    else:
+        out.append(f"{start}-{prev}")
+    return ",".join(out)
+
+def _extract_pmids(line: str) -> List[int]:
+    return [int(m.group(1)) for m in _RX_PMID.finditer(line or "")]
+
+def _extract_aptum_f(line: str) -> List[int]:
+    return [int(m.group(1)) for m in _RX_APTUM_F.finditer(line or "")]
+
+def _extract_lengths_blob(cable_lengths: List[dict]) -> Dict[int, Tuple[Optional[int], Optional[int]]]:
+    """
+    Turn:
+      [{"PMID: 34377": "Calculated: 265m"}, {"PMID: 35844": "OTDR: 125m, Calculated: 106m"}]
+    into:
+      {34377: (265, None), 35844: (106, 125)}
+    """
+    out: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
+    for item in cable_lengths or []:
+        for k, v in item.items():
+            pmid_match = _RX_PMID.search(k)
+            if not pmid_match:
+                continue
+            pmid = int(pmid_match.group(1))
+            calc = None
+            otdr = None
+            # normalize value to plain "words" so "m" suffix doesn't matter
+            text = str(v)
+            m_calc = _RX_LEN_CALC.search(text)
+            if m_calc:
+                calc = int(m_calc.group(1))
+            m_otdr = _RX_LEN_OTDR.search(text)
+            if m_otdr:
+                otdr = int(m_otdr.group(1))
+            out[pmid] = (calc, otdr)
+    return out
+
+def _build_equipment_location_line(location: str, typ: str) -> Tuple[List[str], Optional[str]]:
+    value = f"{location}, {typ}".strip().strip(",")
+    row = [
+        "Equipment Location",
+        value,
+        "", "", "", "", "", ""  # (# of Fbrs, WO Action#, Length, ~OTDR Length, Meter Marks, Google Maps)
+    ]
+    # Google Maps URL can be attached by your upstream (if you have lat/lon),
+    # here we keep it blank and let the caller fill if available.
+    return row, None
+
+def _build_equipment_line(equipment: str) -> List[str]:
+    return ["Equipment", equipment, "", "", "", "", "", ""]
+
+def _build_cable_attach_lines(cables: List[dict]) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for idx, item in enumerate(cables or [], start=1):
+        # allow {"CA1": "..."} style
+        if isinstance(item, dict) and item:
+            label, text = list(item.items())[0]
+            value = f"{label}: {text}"
+        else:
+            value = str(item)
+        rows.append(["Cable[attach]", value, "", "", "", "", "", ""])
+    return rows
+
+def _group_existing_splices(splice_lines: List[str]) -> Optional[Tuple[str, int]]:
+    """
+    Given many line items like:
+      "PMID: 34377, Aptum ID: .F243 -- Splice -- PMID: 35844, Aptum ID: .F387"
+    return:
+      ("PMID: 34377, Aptum ID: .F[243-246] -- Existing Splice(s) -- PMID: 35844, Aptum ID: .F[387-390]", 4)
+    Assumptions:
+      - All these lines belong to the current equipment block.
+      - PMIDs on both sides are consistent (if multiple distinct pairs exist, we keep the first consistent pair).
+    """
+    if not splice_lines:
+        return None
+    # find the dominant pair (left PMID, right PMID)
+    pairs: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
+    for line in splice_lines:
+        pmids = _extract_pmids(line)
+        if len(pmids) < 2:
+            # we require Left/Right PMIDs
             continue
-        if "presented by qsp" in text.lower(): 
-            continue
+        left_pmid, right_pmid = pmids[0], pmids[-1]
+        left_fs  = _extract_aptum_f(line)
+        # heuristic: first half of Fs belong to left; second half belong to right
+        # but many lines format as exactly two .F numbers – one per side – which is ideal
+        if len(left_fs) >= 2:
+            mid = len(left_fs) // 2
+            lfs = [left_fs[0]]
+            rfs = [left_fs[-1]]
+        elif len(left_fs) == 1:
+            lfs, rfs = [left_fs[0]], []
+        else:
+            lfs, rfs = [], []
 
-        if re.match(r"^(CA\\d+|CA[A-Za-z0-9\\-]+)\\s*[:;]", text) or text.startswith("CA"):
-            d = {k: "" for k in COLUMNS}
-            d.update({
-                "Detail Item": "Cable[attach]",
-                "Report: Splice DetailsConnections": text,
-            })
-            rows.append(d)
-            continue
+        # Alternatively, a more robust parse for exactly two .F values:
+        both = list(_RX_FX.finditer(line))
+        if len(both) >= 2:
+            lfs = [int(both[0].group(1))]
+            rfs = [int(both[-1].group(1))]
 
-        if text.startswith("PMID:") and "Splice" in text:
-            cnt = parse_existing_splice_fibers(text)
-            d = {k: "" for k in COLUMNS}
-            d.update({
-                "Detail Item": "Existing Splice",
-                "Report: Splice DetailsConnections": text,
-                "# of Fbrs": str(cnt) if cnt is not None else "",
-            })
-            rows.append(d)
-            continue
+        pairs.setdefault((left_pmid, right_pmid), [])
+        for L in lfs or [None]:
+            for R in rfs or [None]:
+                if L is not None and R is not None:
+                    pairs[(left_pmid, right_pmid)].append((L, R))
 
-        if text.startswith("PMID:") and "Cable Length" in text:
-            length, otdr, mm = parse_cableinfo_metrics(text)
-            d = {k: "" for k in COLUMNS}
-            d.update({
-                "Detail Item": "CableInfo",
-                "Report: Splice DetailsConnections": text,
-                "Length": length,
-                "~OTDR Length": otdr,
-                "Meter Marks": mm,
-            })
-            rows.append(d)
-            continue
+    if not pairs:
+        return None
 
-        # Fallback informational line
-        d = {k: "" for k in COLUMNS}
-        d.update({
-            "Detail Item": "Info",
-            "Report: Splice DetailsConnections": text,
-        })
-        rows.append(d)
+    # pick the pair with most observations
+    (lp, rp), fibers = max(pairs.items(), key=lambda kv: len(kv[1]))
+    left_numbers  = [a for a, _ in fibers]
+    right_numbers = [b for _, b in fibers]
 
-    return rows, (map_url or None)
+    left_comp  = _compact_numbers(left_numbers)
+    right_comp = _compact_numbers(right_numbers)
+    fbrs_count = len(set(left_numbers))  # # of fibers from left side (should match right if 1-to-1)
 
-def build_overview_df(json_path: Path):
-    data = json.loads(json_path.read_text(encoding="utf-8"))
-    connections = data["Report: Splice Details"][0][""][0]["Connections"]
-    sections = split_sections(connections)
+    left_part  = f"PMID: {lp}, Aptum ID: .F[{left_comp}]"  if left_comp  else f"PMID: {lp}"
+    right_part = f"PMID: {rp}, Aptum ID: .F[{right_comp}]" if right_comp else f"PMID: {rp}"
+    text = f"{left_part} -- Existing Splice(s) -- {right_part}"
+    return text, fbrs_count
 
-    all_rows: list[dict] = []
-    urls: list[Optional[str]] = []
-    for sec in sections:
-        if len(sec.strip()) < 20: 
-            continue
-        rows, url = section_to_rows(sec)
+def _build_cableinfo_lines(cable_lengths_map: Dict[int, Tuple[Optional[int], Optional[int]]]) -> List[List[str]]:
+    rows: List[List[str]] = []
+    # deterministic order by PMID
+    for pmid in sorted(cable_lengths_map.keys()):
+        calc, otdr = cable_lengths_map[pmid]
+        line = f"PMID: {pmid}: " + \
+               (f"OTDR: {otdr}m, " if otdr is not None else "") + \
+               (f"Calculated: {calc}m" if calc is not None else "")
+        rows.append(["CableInfo", line, "", "", 
+                     (calc if calc is not None else ""), 
+                     (otdr if otdr is not None else ""),
+                     "", ""])
+    return rows
+
+# =========================
+# Transformer (one location)
+# =========================
+def build_location_block(location_payload: dict) -> Tuple[List[List[str]], List[Optional[str]]]:
+    """
+    Input example:
+    {
+      "Location": "Montreal, PA21483",
+      "Type": "Beanfield Manhole/Handwell with Splice Box",
+      "Equipment": "21483-450D-1 : OSP Splice Box - 600D : PA21483, 450-1 FOSC",
+      "Cables": [{"CA1": "PMID: 33557, 288F, 1250 Rene Levesque, 450-2"}, {"CA2": "PMID: 33805, 288F, PA15393"}],
+      "Splice": [
+          "PMID: 34377, Aptum ID: .F243 -- Splice -- PMID: 35844, Aptum ID: .F387",
+          "PMID: 34377, Aptum ID: .F244 -- Splice -- PMID: 35844, Aptum ID: .F388",
+          "PMID: 34377, Aptum ID: .F245 -- Splice -- PMID: 35844, Aptum ID: .F389",
+          "PMID: 34377, Aptum ID: .F246 -- Splice -- PMID: 35844, Aptum ID: .F390"
+      ],
+      "Cable Lengths": [
+         {"PMID: 34377": "Calculated: 265m"},
+         {"PMID: 35844": "OTDR: 125m, Calculated: 106m"}
+      ]
+    }
+    """
+    rows: List[List[str]] = []
+    urls: List[Optional[str]] = []   # parallel list for Google Maps url (set only on location row)
+
+    # 1) Equipment Location
+    loc = str(location_payload.get("Location", "")).strip()
+    typ = str(location_payload.get("Type", "")).strip()
+    row_loc, link = _build_equipment_location_line(loc, typ)
+    rows.append(row_loc)
+    urls.append(link)
+
+    # 2) Equipment
+    eq = str(location_payload.get("Equipment", "")).strip()
+    if eq:
+        rows.append(_build_equipment_line(eq)); urls.append(None)
+
+    # 3) Cable[attach] list
+    cables = location_payload.get("Cables") or []
+    for r in _build_cable_attach_lines(cables):
+        rows.append(r); urls.append(None)
+
+    # 4) Existing Splice grouping (within this equipment only)
+    splice_val = location_payload.get("Splice")
+    splice_lines: List[str] = []
+    if isinstance(splice_val, list):
+        splice_lines = [str(x) for x in splice_val]
+    elif isinstance(splice_val, str) and splice_val.strip():
+        # If you still sometimes store a single delimited string
+        splice_lines = [s for s in re.split(r"\n|\r\n", splice_val) if s.strip()]
+
+    grouped = _group_existing_splices(splice_lines)
+    if grouped:
+        text, cnt = grouped
+        rows.append(["Existing Splice", text, int(cnt), "", "", "", "", ""])
+        urls.append(None)
+
+    # 5) CableInfo (with numeric Length / ~OTDR Length)
+    cable_lengths_map = _extract_lengths_blob(location_payload.get("Cable Lengths") or [])
+    for r in _build_cableinfo_lines(cable_lengths_map):
+        rows.append(r); urls.append(None)
+
+    return rows, urls
+
+# =========================
+# High-level builders
+# =========================
+def build_overview_df(json_path: Path) -> Tuple[pd.DataFrame, List[Optional[str]]]:
+    """
+    Read your work-order JSON (already pre-cleaned), iterate locations, emit a single DF.
+    Expected top-level schema: { "locations": [ <location_payload>, ... ] }
+    If your file is raw, adapt here to reach that shape.
+    """
+    data = json.loads(Path(json_path).read_text(encoding="utf-8"))
+
+    # Be flexible: accept either {"locations": [...]} or a flat single location object
+    locs = data.get("locations")
+    if isinstance(locs, list):
+        location_list = locs
+    else:
+        # fallback: if the file *is already* a single location payload
+        location_list = [data]
+
+    all_rows: List[List[str]] = []
+    all_urls: List[Optional[str]] = []
+    for block in location_list:
+        rows, urls = build_location_block(block)
         all_rows.extend(rows)
-        for i, _ in enumerate(rows):
-            urls.append(url if i == 0 else None)  # link only on first row of each cluster
+        all_urls.extend(urls)
 
-    df = pd.DataFrame(all_rows, columns=COLUMNS).fillna("")
-    return df, urls
+    df = pd.DataFrame(all_rows, columns=COLUMNS)
+    return df, all_urls
 
-def write_styled_excel(df: pd.DataFrame, urls, out_xlsx: Path, sheet="Sheet1"):
-    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet)
-        wb  = writer.book
-        ws  = writer.sheets[sheet]
+# =========================
+# Excel export with first-column coloring
+# =========================
+def write_styled_excel(df: pd.DataFrame, urls: List[Optional[str]], out_path: Path, sheet: str = "Sheet1") -> None:
+    """
+    Writes the dataframe to XLSX using xlsxwriter and applies color to the *first column*
+    based on the “Detail Item” value.
+      - Equipment / Equipment Location: dark green
+      - Cable[attach]: light green
+      - Break Splice: red
+      - Splice required: orange
+      - CableInfo: blue
+      - Existing Splice: (treat as 'Equipment' tone? Spec didn’t mandate; we leave default (black) or choose dark green)
+    """
+    out_path = Path(out_path)
+    with pd.ExcelWriter(out_path, engine="xlsxwriter") as xw:
+        df.to_excel(xw, index=False, sheet_name=sheet)
+        wb  = xw.book
+        ws  = xw.sheets[sheet]
 
-        # Column widths to match reference
-        widths = {"A":16,"B":80,"C":10,"D":12,"E":8,"F":14,"G":12,"H":12,"I":10,"J":10,"K":8,"L":8,"M":14}
-        for col, w in widths.items():
-            ws.set_column(f"{col}:{col}", w)
+        # Formats
+        fmt_loc   = wb.add_format({"font_color": "#0B6623", "bold": True})  # dark green
+        fmt_equip = wb.add_format({"font_color": "#0B6623", "bold": False})
+        fmt_cab   = wb.add_format({"font_color": "#32CD32"})                # light/grass green
+        fmt_break = wb.add_format({"font_color": "#FF0000"})                 # red
+        fmt_req   = wb.add_format({"font_color": "#FF8C00"})                 # orange
+        fmt_info  = wb.add_format({"font_color": "#0000FF"})                 # blue
 
-        # Freeze header
-        ws.freeze_panes(1, 0)
+        # Column widths (auto-ish)
+        for ci, col in enumerate(df.columns):
+            width = max(10, min(80, int(df[col].astype(str).map(len).max() + 2)))
+            ws.set_column(ci, ci, width)
 
-        # Excel table styling
-        nrows, ncols = df.shape
-        headers = [{"header": h} for h in df.columns]
-        ws.add_table(0, 0, nrows, ncols - 1, {
-            "columns": headers,
-            "style": "Table Style Medium 9",
-            "banded_rows": True,
-        })
+        # Apply first-column styling and optional link in "Google Maps"
+        detail_col = 0
+        link_col   = df.columns.get_loc("Google Maps") if "Google Maps" in df.columns else None
 
-        # Red+bold format for 'Equipment Location' rows
-        fmt_loc = wb.add_format({"bold": True, "font_color": "white", "bg_color": "#D32F2F"})
-        col_map = df.columns.get_loc("Map It")
-        for r in range(nrows):
-            is_loc = (df.iat[r, 0] == "Equipment Location")
-            if is_loc:
-                ws.set_row(r + 1, None, fmt_loc)      # +1 to skip header row
-                if urls[r]:
-                    ws.write_url(r + 1, col_map, urls[r], string="Google Maps")
+        for r in range(len(df)):
+            label = str(df.iat[r, detail_col])
+            if   label == "Equipment Location":
+                ws.write(r + 1, detail_col, label, fmt_loc)
+            elif label == "Equipment":
+                ws.write(r + 1, detail_col, label, fmt_equip)
+            elif label == "Cable[attach]":
+                ws.write(r + 1, detail_col, label, fmt_cab)
+            elif label == "Break Splice":
+                ws.write(r + 1, detail_col, label, fmt_break)
+            elif label == "Splice required":
+                ws.write(r + 1, detail_col, label, fmt_req)
+            elif label == "CableInfo":
+                ws.write(r + 1, detail_col, label, fmt_info)
             else:
-                # ensure non-location rows have no link
-                ws.write(r + 1, col_map, "")
+                # Existing Splice or any other; leave default
+                pass
+
+            # Optional Google Maps link on the same row
+            if link_col is not None:
+                url = urls[r] if r < len(urls) else None
+                if label == "Equipment Location" and url:
+                    ws.write_url(r + 1, link_col, url, string="Google Maps")
+                else:
+                    ws.write(r + 1, link_col, "")
 
 def generate_xlsx(json_path: str | Path, out_xlsx: str | Path) -> pd.DataFrame:
-    """Public entry: build dataframe and write only the Excel file (no CSV/KML)."""
+    """Public entrypoint for the Streamlit button: build the DF and write the xlsx."""
     df, urls = build_overview_df(Path(json_path))
-    write_styled_excel(df, urls, Path(out_xlsx), sheet="Sheet1")
+    write_styled_excel(df, urls, Path(out_xlsx), sheet="Fibre Trace")
     return df

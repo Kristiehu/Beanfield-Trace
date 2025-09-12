@@ -1,460 +1,330 @@
-# helper.py
+# fiber_action.py
 from __future__ import annotations
-import io, re, math
-from typing import Dict, Tuple
+
+import io
+import json
+import re
+from typing import Dict, IO, List, Optional, Set, Tuple, Union
+
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-HEADER_FILL = PatternFill("solid", fgColor="D9D9D9")
-BOLD = Font(bold=True)
-THIN = Side(style="thin", color="AAAAAA")
-BOX  = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
-CENTER = Alignment(horizontal="center", vertical="center")
-LEFT   = Alignment(horizontal="left",   vertical="center")
 
+# =========================
+# Pair/Location parsing
+# =========================
 
-def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: Dict) -> pd.DataFrame:
-    """
-    Produce a 4-column grid:
-        [Label_L, Value_L, Label_R, Value_R]
-    with rows matching your trace_action.csv layout.
-    """
-    if wo_df is None or wo_df.empty:
-        wo_df = pd.DataFrame()
-
-    # Derive columns we need
-    desc_col  = _try_col(wo_df, ["Description","DESC","Desc","description"]) or (wo_df.columns[0] if len(wo_df.columns) else None)
-    len_col   = _try_col(wo_df, ["Length", "End to End Length(m)", "End_to_End_Length_m"])
-    otdr_col  = _try_col(wo_df, ["~OTDR Length","OTDR Length","~OTDR Length(m)","otdr_length"])
-
-    # Counts
-    num_breaks, num_splices = (0, 0)
-    if desc_col:
-        try:
-            num_breaks, num_splices = _count_breaks_splices(wo_df, desc_col)
-        except Exception:
-            pass
-
-    # Lengths
-    end_to_end_len = None
-    otdr_len = None
-    if len_col and len_col in wo_df.columns:
-        vals = pd.to_numeric(wo_df[len_col], errors="coerce").dropna()
-        if len(vals):
-            end_to_end_len = int(vals.sum()) if len(vals) > 1 else int(vals.iloc[0])
-    if otdr_col and otdr_col in wo_df.columns:
-        vals = pd.to_numeric(wo_df[otdr_col], errors="coerce").dropna()
-        if len(vals):
-            otdr_len = int(vals.sum()) if len(vals) > 1 else int(vals.iloc[0])
-
-    # Pull meta (fallback to blanks)
-    order_id = meta.get("order_id", "")
-    wo_id    = meta.get("wo_id", "")
-    designer = meta.get("designer_name", "")
-    phone    = meta.get("designer_phone", "")
-    date     = meta.get("date", "")
-    a_end    = meta.get("a_end", "")
-    z_end    = meta.get("z_end", "")
-    details  = meta.get("details", "OSP DF")
-
-    grid = [
-        ["Order Number:",            order_id,                 "Number of Fibre Breaks:",   num_breaks or 0],
-        ["Work Order Number:",       wo_id,                    "Number of Fibre Splices",   num_splices or 0],
-        ["Order A to Z:",            f"_{a_end}_{z_end}" if a_end and z_end else "",  "End to End Length(m)",   end_to_end_len or 0],
-        ["Designer:",                designer,                 "End to End ~ OTDR(m)",      otdr_len or 0],
-        ["Contact Number:",          phone,                    "A END:",                    a_end],
-        ["Date (dd/mm/yyyy):",       date,                     "Z END:",                    z_end],
-        ["Details:",                 details,                  None,                        None],
-        ["ORDER Number:",            order_id,                 None,                        None],
-    ]
-
-    # pad to a fixed height (like your sample which had blank rows beneath)
-    while len(grid) < 21:
-        grid.append([None, None, None, None])
-
-    out = pd.DataFrame(grid, columns=["Order Number: ", "ORDER-267175", "Number of Fibre Breaks: ", "6"])
-    return out
-
-def read_actions_from_wo_file(uploaded_file) -> pd.DataFrame:
-    raw = pd.read_csv(uploaded_file, header=None, dtype=str)
-    raw.columns = range(raw.shape[1])
-
-    hdr_idx = raw.index[raw[0].astype(str).str.strip().eq("Action")]
-    if len(hdr_idx) == 0:
-        return pd.DataFrame(columns=["Action", "Description", "SAP"])
-    start = int(hdr_idx[0]) + 1
-
-    sub = raw.loc[start:, [0, 1, 2]].copy()
-    sub.columns = ["Action", "Description", "SAP"]
-    stop_mask = sub.isna().all(axis=1)
-    if stop_mask.any():
-        sub = sub.loc[: stop_mask.idxmax() - 1]
-
-    sub = sub.fillna("")
-    return sub
-    t = _strip_markup(s)
-    # split on common separators and dedupe while keeping order
-    parts = re.split(r"\s[-:]\s| ; | , ", t)
-    parts = [p.strip() for p in parts if p and p.strip() != "."]
-    seen, uniq = set(), []
-    for p in parts:
-        k = p.lower()
-        if k not in seen:
-            seen.add(k)
-            uniq.append(p)
-
-    # shorten verbose phrases frequently seen in source
-    short = []
-    for p in uniq:
-        p2 = p
-        p2 = re.sub(r"\bBeanfield Manhole/Handwell\b", "BF Manhole/Handwell", p2, flags=re.I)
-        p2 = re.sub(r"\bUtility Pole (Wood|Concrete) With Splice Box\b",
-                    r"Utility Pole (\1) + Splice Box", p2, flags=re.I)
-        p2 = re.sub(r"\bHydro Manhole with Splice Box\b", "Hydro MH + Splice Box", p2, flags=re.I)
-        p2 = re.sub(r"\bGeneric OSP Splice Box\b", "OSP Splice Box", p2, flags=re.I)
-        p2 = re.sub(r"\bAddress[: ]", "", p2, flags=re.I)
-        p2 = re.sub(r"\bToronto[, ]*", "", p2, flags=re.I)
-        p2 = re.sub(r"\([^)]*\)", "", p2).strip()  # drop coords / parentheses
-        short.append(p2)
-
-    out = " | ".join([p for p in short if p])
-    return re.sub(r"\s{2,}", " ", out).strip(" |")
-
-def add_simplified_description(df: pd.DataFrame) -> pd.DataFrame:
-    # pick the description column if named differently
-    for cand in ["Description", "description", "DESC", "Desc", "Notes", "details", "Details"]:
-        if cand in df.columns:
-            desc_col = cand
-            break
-    else:
-        desc_col = "Description"
-        if desc_col not in df.columns:
-            df[desc_col] = ""
-
-    df["Description"] = df[desc_col]  # normalize name for preview
-    df["Description_simplified"] = df[desc_col].apply(simplify_description)
-    return df
-
-def read_uploaded_table(up_file) -> pd.DataFrame:
-    """Robust CSV reader used by other generators in your app.
-    Accepts a file-like object from st.file_uploader.
-    """
-    up_file.seek(0)
-    content = up_file.read()
-    # Try UTF-8, then latin-1 as fallback
-    for enc in ("utf-8", "latin-1"):
-        try:
-            return pd.read_csv(io.BytesIO(content), encoding=enc)
-        except Exception:
-            continue
-    # Last resort: excel sniff
-    up_file.seek(0)
-    return pd.read_excel(io.BytesIO(content))
-
-# Replace your simplify_description with this improved version:
-def simplify_description(text: str) -> str:
-    if pd.isna(text):
-        return ""
-    s = str(text).strip()
-    if not s:
-        return ""
-
-    # Remove GPS coords, parentheses with only coords or IDs
-    s = re.sub(r"\([^)]*\)", "", s)
-
-    # Drop common noisy labels
-    s = re.sub(r"\b(Toronto|Address|PMID|Aptum ID)\s*:?\s*", "", s, flags=re.I)
-
-    # Replace custom tokens
-    s = (s.replace("<COMMA>", ", ")
-          .replace("<COLON>", ": ")
-          .replace("<AND>", " & ")
-          .replace("<OPEN>", "")
-          .replace("<CLOSE>", ""))
-
-    # Normalize punctuation/spacing
-    s = re.sub(r"\s*[,;|]\s*", ", ", s)
-    s = re.sub(r"\s{2,}", " ", s)
-    s = s.strip(" ,;-")
-
-    return s
-
-_RX_PAIR = re.compile(
-    r"^(?P<kind>Remove\s+splicing|Splice)\s+"
-    r"(?P<a_id>\d+)\s*\[\s*(?P<a1>\d+)\s*[-–]\s*(?P<a2>\d+)\s*\]\s*[-–]\s*"
-    r"(?P<b_id>\d+)\s*\[\s*(?P<b1>\d+)\s*[-–]\s*(?P<b2>\d+)\s*\]"
-    r".*$",
+# Match a pair like:
+#   "Splice 41121[73 - 84] - 41122[73 - 84]"
+#   "Splice 41121 [73-84] 41122 [73-84]"
+PAIR_RE = re.compile(
+    r'(?P<verb>Splice|BREAK)\s+'
+    r'(?P<A>[A-Za-z0-9#._/-]+)\s*\[\s*(?P<Ar>[^\]]+?)\s*\]\s*'
+    r'(?:-|\s+)?\s*'
+    r'(?P<B>[A-Za-z0-9#._/-]+)\s*\[\s*(?P<Br>[^\]]+?)\s*\]',
     re.IGNORECASE,
 )
 
-def _fmt_span(x1: str, x2: str) -> str:
-    return f"[{int(x1)}-{int(x2)}]"
+# Find all "... TOKEN - TOKEN ..." pairs near the tail; we will keep the LAST pair only.
+TAIL_PAIR_RE = re.compile(r'([A-Za-z0-9#._/-]{2,})\s*-\s*([A-Za-z0-9#._/-]{2,})')
 
-def normalize_description_to_pair(text: str) -> str:
+# JSON header for a splice box block, e.g. "M#248 : OSP Splice Box - 400D5 : M#248"
+BOX_HEADER_RE = re.compile(r'^\s*([A-Za-z0-9#._/-]{2,})\s*:\s*OSP Splice Box\b.*$', re.IGNORECASE)
+# CA lines like "CA2: PMID: 41121 …" (tolerate odd tokens between 'PMID' and the number)
+CA_PMD_RE = re.compile(r'^\s*CA\d+.*?PMID[^\d]*([0-9]+[0-9A-Z]*)\b', re.IGNORECASE)
+# Lines like "PMID: 41121 … -- Splice -- PMID: 41122 …"
+PAIR_ORIENT_RE = re.compile(
+    r'^\s*PMID[:]\s*([0-9A-Z]+)\b.*?--\s*Splice\s*--\s*PMID[:]\s*([0-9A-Z]+)\b',
+    re.IGNORECASE,
+)
+
+
+# =========================
+# CSV reading
+# =========================
+def _read_actions_csv(upload: Union[str, IO[bytes], bytes]) -> pd.DataFrame:
     """
-    Convert verbose 'Remove splicing ... - ...' / 'Splice ... - ...' lines into the
-    compact 'BREAK/Splice PMIDA [a-b] PMIDB [a-b]' strings.
+    Read the WO CSV and return Action/Description/SAP table (starting at its header if present).
     """
-    if text is None or (isinstance(text, float) and pd.isna(text)):
-        return ""
-    s = str(text).strip()
-    if not s:
-        return ""
-
-    m = _RX_PAIR.match(s.replace("–", "-"))
-    if not m:
-        # No strict match; leave as-is (or return "")
-        return s if s.lower() != "none" else ""
-
-    kind = m.group("kind").lower().strip()
-    a_id, a1, a2 = m.group("a_id"), m.group("a1"), m.group("a2")
-    b_id, b1, b2 = m.group("b_id"), m.group("b1"), m.group("b2")
-
-    if kind.startswith("remove"):
-        # BREAK and reverse order: B then A
-        return f"BREAK {b_id} {_fmt_span(b1,b2)} {a_id} {_fmt_span(a1,a2)}"
+    if isinstance(upload, bytes):
+        text = upload.decode("utf-8", "ignore")
+    elif hasattr(upload, "read"):
+        upload.seek(0)
+        text = upload.read().decode("utf-8", "ignore")
     else:
-        # Splice, keep order: A then B
-        return f"Splice {a_id} {_fmt_span(a1,a2)} {b_id} {_fmt_span(b1,b2)}"
+        text = open(upload, "r", encoding="utf-8").read()
 
-def transform_fibre_action_actions(wo_df: pd.DataFrame) -> pd.DataFrame:
-
-    """
-    Extract the Action/Description/SAP section and normalize Description.
-    (Uses the header-finder you already added.)
-    """
-    # treat wo_df as raw grid; find the real header row where col0='Action' & col1='Description'
-    raw = pd.DataFrame(wo_df.values)
-    raw.columns = range(raw.shape[1])
-
-    hdr_idx = raw.index[
-        raw.get(0).astype(str).str.strip().eq("Action") &
-        raw.get(1).astype(str).str.strip().eq("Description")
-    ]
-    if len(hdr_idx) == 0:
-        # case-insensitive fallback
-        hdr_idx = raw.index[
-            raw.get(0).astype(str).str.fullmatch(r"\s*Action\s*", case=False, na=False) &
-            raw.get(1).astype(str).str.fullmatch(r"\s*Description\s*", case=False, na=False)
-        ]
-    if len(hdr_idx) == 0:
-        return pd.DataFrame(columns=["Action", "Description", "SAP"])
-
-    start = int(hdr_idx[0]) + 1
-    sub = raw.loc[start:, [0, 1, 2]].copy()
-    sub.columns = ["Action", "Description", "SAP"]
-
-    # trim trailing blank block
-    sub = sub.fillna("")
-    mask_keep = ~(
-        sub["Action"].astype(str).str.strip().eq("") &
-        sub["Description"].astype(str).str.strip().eq("") &
-        sub["SAP"].astype(str).str.strip().eq("")
-    )
-    sub = sub.loc[mask_keep]
-
-    # normalize Description to your compact format
-    sub["Description"] = sub["Description"].map(normalize_description_to_pair)
-
-    # ensure Action numbering prefix like '1: Add' remains (or generate if missing)
-    if not sub["Action"].astype(str).str.match(r"^\s*\d+:\s").any():
-        sub["Action"] = [f"{i+1}: {a if str(a).strip() else 'Add'}"
-                         for i, a in enumerate(sub["Action"].astype(str).str.strip())]
-
-    if "SAP" not in sub.columns:
-        sub["SAP"] = ""
-
-    return sub[["Action", "Description", "SAP"]].reset_index(drop=True)
-
-def _auto_widths(ws, df, min_w=8, max_w=60, pad=2):
-    # Auto size each column using header + longest cell length
-    for col_idx, col_name in enumerate(df.columns):
-        header_w = len(str(col_name))
-        data_w = 0 if df.empty else int(df[col_name].astype(str).map(len).max())
-        width = max(header_w, data_w) + pad
-        ws.set_column(col_idx, col_idx, max(min_w, min(width, max_w)))
-
-def fibre_action_excel_bytes(summary_df: pd.DataFrame,
-                             actions_df: pd.DataFrame,
-                             title: str = "fibre_action") -> bytes:
-    """
-    Two sheets ('Summary', 'Fibre Action'), no styling, only auto-width columns.
-    """
-    bio = io.BytesIO()
-    # NOTE: no 'options=' here to avoid the ExcelWriter.new() error
-    with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
-        summary_df.to_excel(writer, sheet_name="Summary", index=False)
-        actions_df.to_excel(writer, sheet_name="Fibre Action", index=False)
-
-        ws1 = writer.sheets["Summary"]
-        ws2 = writer.sheets["Fibre Action"]
-        _auto_widths(ws1, summary_df)
-        _auto_widths(ws2, actions_df)
-
-        # (Optional) title metadata—safe to ignore if unsupported
-        try:
-            writer.book.set_properties({"title": title})
-        except Exception:
-            pass
-
-    bio.seek(0)
-    return bio.getvalue()
-    
-def transform_fibre_action_summary_grid(wo_df: pd.DataFrame, meta: dict) -> pd.DataFrame:
-    """
-    Return a 2-column key/value DataFrame for the Summary tab.
-    Overwrites the old 4-column layout.
-    """
-    # Derive counts if possible
-    desc_col = None
-    for c in wo_df.columns:
-        if "desc" in c.lower():
-            desc_col = c
+    lines = text.splitlines()
+    hdr_idx = None
+    for i, line in enumerate(lines):
+        if line.strip().lower().startswith("action,description"):
+            hdr_idx = i
             break
-    breaks = splices = 0
-    if desc_col:
-        s = wo_df[desc_col].astype(str)
-        breaks = s.str.contains("Remove", case=False, na=False).sum()
-        splices = s.str.contains("Splice", case=False, na=False).sum()
 
-    # Meta values
-    order_id = meta.get("order_id", "")
-    wo_id    = meta.get("wo_id", "")
-    designer = meta.get("designer_name", "")
-    phone    = meta.get("designer_phone", "")
-    date     = meta.get("date", "")
-    a_end    = meta.get("a_end", "")
-    z_end    = meta.get("z_end", "")
-    details  = meta.get("details", "OSP DF")
+    if hdr_idx is not None:
+        df = pd.read_csv(io.StringIO("\n".join(lines[hdr_idx:])),
+                         dtype=str, keep_default_na=False)
+    else:
+        df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
 
-    # Assemble rows in desired order
-    rows = [
-        ("Order Number:", order_id),
-        ("Work Order Number:", wo_id),
-        ("Order A to Z:", f"_{a_end}_{z_end}" if a_end and z_end else ""),
-        ("Designer:", designer),
-        ("Contact Number:", phone),
-        ("Date (dd/mm/yyyy):", date),
-        ("Details:", details),
-        ("Number of Fibre Breaks", breaks),
-        ("Number of Fibre Splices", splices),
-        ("End to End Length(m)", 0),
-        ("End to End ~ OTDR(m)", 0),
-        ("A END:", a_end),
-        ("Z END:", z_end),
-    ]
-
-    return pd.DataFrame(rows, columns=["Field", "Value"])
+    # normalize columns
+    cols = [c.strip() for c in df.columns]
+    rename = {}
+    for c in df.columns:
+        lc = c.strip().lower()
+        if lc == "action": rename[c] = "Action"
+        if lc == "description": rename[c] = "Description"
+        if lc == "sap": rename[c] = "SAP"
+    df = df.rename(columns=rename)
+    for col in ("Action", "Description"):
+        if col not in df.columns:
+            df[col] = ""
+    if "SAP" not in df.columns:
+        df["SAP"] = ""
+    return df[["Action", "Description", "SAP"]].copy()
 
 
-from typing import Dict, Any, List
+# =========================
+# JSON → CA order maps
+# =========================
+def _extract_connection_blobs(json_source: Optional[Union[str, IO[bytes], bytes]]) -> List[str]:
+    if json_source is None:
+        return []
+    if isinstance(json_source, bytes):
+        raw = json_source.decode("utf-8", "ignore")
+    elif hasattr(json_source, "read"):
+        json_source.seek(0)
+        raw = json_source.read().decode("utf-8", "ignore")
+    else:
+        raw = open(json_source, "r", encoding="utf-8").read()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    blobs: List[str] = []
+    try:
+        for blk in data.get("Report: Splice Details", [])[0].get("", []):
+            s = blk.get("Connections")
+            if isinstance(s, str) and s.strip():
+                blobs.append(s)
+    except Exception:
+        pass
+    return blobs
 
-def _dig_number(container: dict, *paths: str, default: float = 0.0) -> float:
+
+def _parse_json_for_order(json_source: Optional[Union[str, IO[bytes], bytes]]
+                          ) -> Tuple[Dict[str, Dict[str, int]], Dict[str, Set[str]], Dict[frozenset, Tuple[str, str]]]:
     """
-    Try several dot-paths inside the JSON to find a numeric value.
-    Accepts numeric or string with a number embedded.
+    Returns:
+      ca_order_by_box: { box_name -> { pmid -> rank } }  # from CA1, CA2, ...
+      boxes_by_pmid:   { pmid -> set(box_name) }
+      pair_orient:     { frozenset({A,B}) -> (A,B) }     # explicit JSON "PMID A -- Splice -- PMID B"
     """
-    for path in paths:
-        cur: Any = container
-        ok = True
-        for part in path.split("."):
-            if isinstance(cur, dict) and part in cur:
-                cur = cur[part]
-            else:
-                ok = False
-                break
-        if not ok:
-            continue
-        if isinstance(cur, (int, float)):
-            return float(cur)
-        if isinstance(cur, str):
-            m = re.search(r"[-+]?\d*\.?\d+", cur.replace(",", ""))
+    ca_order_by_box: Dict[str, Dict[str, int]] = {}
+    boxes_by_pmid: Dict[str, Set[str]] = {}
+    pair_orient: Dict[frozenset, Tuple[str, str]] = {}
+
+    for blob in _extract_connection_blobs(json_source):
+        current_box: Optional[str] = None
+        order_map: Dict[str, int] = {}
+        for line in blob.splitlines():
+            m = BOX_HEADER_RE.match(line)
             if m:
-                try:
-                    return float(m.group(0))
-                except ValueError:
-                    pass
-    return default
+                if current_box and order_map and current_box not in ca_order_by_box:
+                    ca_order_by_box[current_box] = dict(order_map)
+                current_box = m.group(1).strip()
+                order_map = {}
+                continue
+            m = CA_PMD_RE.match(line)
+            if m and current_box:
+                pmid = m.group(1).strip()
+                if pmid not in order_map:
+                    order_map[pmid] = len(order_map)
+                    boxes_by_pmid.setdefault(pmid, set()).add(current_box)
+                continue
+            m = PAIR_ORIENT_RE.match(line)
+            if m:
+                a, b = m.group(1), m.group(2)
+                pair_orient.setdefault(frozenset((a, b))), (a, b)
+                pair_orient[frozenset((a, b))] = (a, b)
+        if current_box and order_map and current_box not in ca_order_by_box:
+            ca_order_by_box[current_box] = dict(order_map)
 
-def compute_fibre_action_summary_from_json(j: Dict[str, Any]) -> Dict[str, float]:
+    return ca_order_by_box, boxes_by_pmid, pair_orient
+
+
+def _find_common_box(A: str, B: str,
+                     ca_order_by_box: Dict[str, Dict[str, int]],
+                     boxes_by_pmid: Dict[str, Set[str]],
+                     loc_hint: Optional[str]) -> Optional[str]:
     """
-    Expect j to contain an array of action rows under one of:
-      - j['actions'], j['fibre_action'], j['Fibre Action'], j['FibreAction']
-    Each row should have 'Action' / 'Description' (case-insensitive).
-    Counting rules (per your example):
-      - One 'BREAK … [..] … [..]' line = 2 breaks (two ends)
-      - One 'Splice … [..] … [..]' line = 2 splices (two ends)
+    Pick a splice box to order within:
+      - If loc_hint (like "M#248") is provided and both A/B exist in that box, use it.
+      - Else find a box that contains both A and B (prefer the one where A<=B already).
     """
-    # find the actions list no matter which key you used
-    actions: List[dict] = (
-        j.get("actions")
-        or j.get("fibre_action")
-        or j.get("Fibre Action")
-        or j.get("FibreAction")
-        or []
-    )
+    if loc_hint and loc_hint in ca_order_by_box:
+        om = ca_order_by_box[loc_hint]
+        if A in om and B in om:
+            return loc_hint
 
-    n_breaks = 0
-    n_splices = 0
+    common = boxes_by_pmid.get(A, set()) & boxes_by_pmid.get(B, set())
+    if len(common) == 1:
+        return next(iter(common))
+    for bx in common:
+        om = ca_order_by_box.get(bx, {})
+        if A in om and B in om and om[A] <= om[B]:
+            return bx
+    return next(iter(common)) if common else None
 
-    for row in actions:
-        act = str(row.get("Action") or row.get("action") or "")
-        desc = str(row.get("Description") or row.get("description") or "")
 
-        d_up = desc.upper()
-        # If it's a break line, count 2 (two ends) — but also guard for edge cases:
-        if "BREAK" in d_up:
-            # Prefer explicit pair detection if present, else assume 2
-            pair_tokens = re.findall(r"\[\s*\d+\s*-\s*\d+\s*\]", desc)
-            n_breaks += 2 if len(pair_tokens) >= 2 else max(1, len(pair_tokens) or 2)
-            continue
-
-        # If it's a splice line, count 2 (two ends)
-        if "SPLICE" in d_up:
-            pair_tokens = re.findall(r"\[\s*\d+\s*-\s*\d+\s*\]", desc)
-            n_splices += 2 if len(pair_tokens) >= 2 else max(1, len(pair_tokens) or 2)
-
-    # End-to-End lengths (try a few likely paths; adjust if your JSON differs)
-    e2e_len_m = _dig_number(
-        j,
-        "end_to_end.length_m",
-        "summary.end_to_end_m",
-        "e2e_length_m",
-        "EndToEndMeters",
-        default=0.0,
-    )
-    e2e_otdr_m = _dig_number(
-        j,
-        "end_to_end.otdr_m",
-        "summary.e2e_otdr_m",
-        "e2e_otdr_m",
-        "EndToEndOTDRMeters",
-        default=0.0,
-    )
-
-    return {
-        "Number of Fibre Breaks": float(n_breaks),
-        "Number of Fibre Splices": float(n_splices),
-        "End to End Length(m)": round(e2e_len_m, 2),
-        "End to End ~ OTDR(m)": round(e2e_otdr_m, 2),
-    }
-
-def apply_summary_counts(summary_df: pd.DataFrame, counts: Dict[str, float]) -> pd.DataFrame:
+# =========================
+# Normalization / Color
+# =========================
+def _normalize_desc(action: str, desc: str,
+                    ca_order_by_box: Dict[str, Dict[str, int]],
+                    boxes_by_pmid: Dict[str, Set[str]],
+                    pair_orient: Dict[frozenset, Tuple[str, str]]) -> str:
     """
-    Expects Summary DF to have first column = label (e.g. 'Number of Fibre Breaks')
-    and second column = value. Returns an updated copy.
+    Parse any messy description, enforce pair order by CA list, and emit:
+      "Splice 41121 [73-84] 41122 [73-84] M#248 - M#248"
+      "BREAK  35289 [3-4]  35116 [3-4]  M#1189A - PA27014"
     """
-    df = summary_df.copy()
-    label_col = df.columns[0]
-    value_col = df.columns[1]
+    s = str(desc or "")
+    m = PAIR_RE.search(s)
+    if not m:
+        return s  # leave non-pair lines untouched
 
-    for k, v in counts.items():
-        mask = df[label_col].astype(str).str.strip().eq(k)
-        if mask.any():
-            df.loc[mask, value_col] = v
-        else:
-            # If the row doesn't exist yet, append it (optional)
-            df = pd.concat([df, pd.DataFrame({label_col: [k], value_col: [v]})], ignore_index=True)
-    return d
+    verb = m.group("verb")
+    A, Ar, B, Br = m.group("A"), m.group("Ar"), m.group("B"), m.group("Br")
+    # Decide verb from action too (e.g., "Remove (E)" → BREAK)
+    if "remove" in (action or "").lower() or "break" in (action or "").lower():
+        verb = "BREAK"
+    else:
+        verb = "Splice"
+
+    # find last "TOKEN - TOKEN" tail pair → location A/B
+    locA = locB = ""
+    tail_pairs = TAIL_PAIR_RE.findall(s)
+    if tail_pairs:
+        locA, locB = tail_pairs[-1]
+    loc_hint = locA if (locA == locB and locA) else None
+
+    # Order by CA list within chosen box
+    box = _find_common_box(A, B, ca_order_by_box, boxes_by_pmid, loc_hint)
+    if box:
+        om = ca_order_by_box.get(box, {})
+        if A in om and B in om and om[A] > om[B]:
+            A, B, Ar, Br = B, A, Br, Ar
+    else:
+        # fall back to explicit orientation, if we saw "PMID A -- Splice -- PMID B" in JSON
+        key = frozenset((A, B))
+        if key in pair_orient:
+            a, b = pair_orient[key]
+            if (A, B) != (a, b):
+                # swap spans accordingly
+                if {A, B} == {a, b}:
+                    if A == b:
+                        A, B, Ar, Br = B, A, Br, Ar
+
+    # Build normalized output; keep location pair if available
+    core = f"{verb} {A} [{Ar}] {B} [{Br}]"
+    if locA and locB:
+        core += f" {locA} - {locB}"
+    return core
+
+
+def _assign_color(action: str, description: str) -> str:
+    """
+    RGB hex without '#':
+      BREAK -> red,  Splice -> orange.
+      (You can expand rules later for equipment/cableinfo rows if those are included.)
+    """
+    a = (action or "").lower()
+    d = (description or "").lower()
+    if "break" in d or "remove" in a:
+        return "FF6666"  # red
+    return "FFA64D"      # orange (Splice default)
+
+
+# =========================
+# Public API
+# =========================
+def compute_fibre_actions(
+    csv_source: Union[str, IO[bytes], bytes],
+    json_source: Optional[Union[str, IO[bytes], bytes]] = None,
+    **_compat_kwargs,  # absorb legacy kwargs like enrich_from_json
+) -> pd.DataFrame:
+    """
+    Build Fibre Action table:
+      - Parse CSV Action/Description/SAP.
+      - Reorder splice/break pairs using JSON CA order.
+      - Normalize Description to: "<Splice|BREAK> A [ra] B [rb] LeftLoc - RightLoc".
+      - Add Color column for Excel styling.
+    """
+    df = _read_actions_csv(csv_source)
+    if df.empty:
+        return df
+
+    ca_order_by_box, boxes_by_pmid, pair_orient = _parse_json_for_order(json_source)
+
+    # Only rows that contain "Splice" or "BREAK" are reformatted; others pass through
+    mask = df["Description"].str.contains(r"\b(Splice|BREAK|Remove)\b", case=False, regex=True)
+    df = df.loc[mask].reset_index(drop=True)
+
+    df["Description"] = [
+        _normalize_desc(a, d, ca_order_by_box, boxes_by_pmid, pair_orient)
+        for a, d in zip(df["Action"], df["Description"])
+    ]
+    df["Color"] = [_assign_color(a, d) for a, d in zip(df["Action"], df["Description"])]
+
+    return df[["Action", "Description", "SAP", "Color"]]
+
+
+# =========================
+# Excel export (color rows)
+# =========================
+def actions_to_workbook_bytes(df: pd.DataFrame, *, sheet_name: str = "Fibre Action") -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+
+    headers = ["Action", "Description", "SAP"]
+    ws.append(headers)
+
+    # Styles
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    top_left = Alignment(vertical="top", wrap_text=True)
+    box = Border(left=Side(style="thin"), right=Side(style="thin"),
+                 top=Side(style="thin"), bottom=Side(style="thin"))
+    header_fill = PatternFill("solid", fgColor="DDDDDD")
+
+    # Header cells
+    for cell in ws[1]:
+        cell.font = bold
+        cell.alignment = center
+        cell.border = box
+        cell.fill = header_fill
+
+    # Data rows with color
+    for _, r in df.iterrows():
+        ws.append([r.get("Action", ""), r.get("Description", ""), r.get("SAP", "")])
+        row_idx = ws.max_row
+        fill_clr = (r.get("Color") or "FFFFFF").upper().replace("#", "")
+        row_fill = PatternFill("solid", fgColor=fill_clr)
+        for cell in ws[row_idx]:
+            cell.border = box
+            cell.alignment = top_left
+            cell.fill = row_fill
+
+    # Auto-width
+    for i, col in enumerate(headers, start=1):
+        series = [str(col)] + [str(v) for v in df[col]]
+        width = min(max(len(x) for x in series) + 2, 100)
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()

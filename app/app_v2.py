@@ -8,21 +8,20 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from pathlib import Path
-from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json # 'upload' helpers
-from _to_kml import to_kml  
-
+from trace_report import _kv_from_wo, _actions_from_wo, _details_from_json # 'upload' helpers 
 from helper import (
     require_inputs,
     placemarks_from_wo_df,
     placemarks_from_payload,
     dedupe_placemarks,
-    read_uploaded_table,  # KML helpers
+    read_uploaded_table,
 )
 
 # --------------------------- Helpers ---------------------------
 # parses lines like: "... Address: ... () : 43.644719, -79.385046 :  : something"
 _COORD_RE = re.compile(r":\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*:\s*:\s*(.*)$")
 
+# =======================================================================
 # --------------------------- Streamlit UI ---------------------------
 ROUTE_TYPES   = ["Primary", "Diverse", "Triverse"]
 CIRCUIT_TYPES = ["NEW", "Existing"]
@@ -33,7 +32,8 @@ work_order_title = get_work_order_number(up_csv) if 'up_csv' in globals() else "
 st.title(f"Trace Builder - [{work_order_title}]")
 st.caption("Upload WO.csv + WO.json, choose options, then export the Excel report (Cover Page, Fibre Trace, Activity Overview Map, Error Report) and a colorized KML/KMZ.")
 
-# --sidebar inputs
+# =======================================================================
+# ---------------------------- sidebar inputs -------------------------
 st.sidebar.header("Project metadata")
 st.sidebar.markdown("Fill in the project metadata to generate a complete workbook.")
 with st.sidebar:
@@ -59,8 +59,9 @@ with st.sidebar:
 
     template_xlsm  = st.file_uploader("Macro template (.xlsm, optional)", type=["xlsm"])
     want_xlsm      = st.checkbox("Export as .xlsm (requires template)", value=bool(template_xlsm))
-    
-# --------------------------------- UPLOADS ----------------------------------
+
+# =======================================================================   
+# ---------------------------- UPLOADS ---------------------------------
 st.subheader("0) Before Upload Files...")
 st.markdown("Create your circuit as per normal, and save the Fibre Trace as a JSON File")
 st.subheader("1) Upload inputs")
@@ -70,13 +71,13 @@ with col_csv:
     with st.container(border=True):
         st.caption("Upload Work Order CSV file")
         up_csv = st.file_uploader(" ", type=["csv"], key="wo_csv")
-        run_csv = st.button("🧹 Clean up CSV", type="primary", use_container_width=True, key="btn_cleanup_csv")
+        run_csv = st.button("Clean up CSV", type="primary", use_container_width=True, key="btn_cleanup_csv")
 
 with col_json:
     with st.container(border=True):
         st.caption("Upload Work Order JSON file")
         up_json = st.file_uploader("  ", type=["json"], key="wo_json")
-        run_json = st.button("🧹 Clean up JSON (trace)", type="primary", use_container_width=True, key="btn_cleanup_json")
+        run_json = st.button("Clean up JSON (trace)", type="primary", use_container_width=True, key="btn_cleanup_json")
 
 ready = (up_csv is not None) and (up_json is not None)
 if not ready:
@@ -87,10 +88,56 @@ else:
     wo_kv = _kv_from_wo(wo_df)
     actions_df = _actions_from_wo(wo_df)
     details_df = _details_from_json(up_json)
+    # Save latest into session for reuse by all panels
+    if up_csv:  st.session_state["wo_csv_file"]  = up_csv
+    if up_json: st.session_state["wo_json_file"] = up_json
 
+    def _get_csv_bytes() -> bytes | None:
+        f = st.session_state.get("wo_csv_file")
+        if not f: return None
+        try: f.seek(0)
+        except Exception: pass
+        return f.read()
+
+    def _get_json_bytes() -> bytes | None:
+        f = st.session_state.get("wo_json_file")
+        if not f: return None
+        try: f.seek(0)
+        except Exception: pass
+        return f.read()
+
+    # Helper to require inputs (so each panel can call it)
+    def require_inputs(need_csv: bool, need_json: bool) -> tuple[bytes | None, bytes | None, bool]:
+        csv_b  = _get_csv_bytes()  if need_csv  else None
+        json_b = _get_json_bytes() if need_json else None
+        ok = True
+        if need_csv and not csv_b:
+            st.warning("Please upload the Work Order CSV above.")
+            ok = False
+        if need_json and not json_b:
+            st.warning("Please upload the Work Order JSON above.")
+            ok = False
+        return csv_b, json_b, ok
+
+    # Utility: make a temp file from uploaded bytes and yield the path
+    from contextlib import contextmanager
+    @contextmanager
+    def as_tempfile(data: bytes, suffix: str):
+        tf = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        try:
+            tf.write(data)
+            tf.flush(); tf.close()
+            yield Path(tf.name)
+        finally:
+            try: os.unlink(tf.name)
+            except Exception: pass
+
+# =======================================================================
+# ------------------------------ Cleanup --------------------------------
 from cleanup_json import run_clean_json, export_bytes as export_json_bytes, build_print_table
 from cleanup_csv import run_clean_csv, export_csv_bytes
-# ---------------- CSV CLEANUP ----------------
+
+# --- CSV ---
 if run_csv:
     if not up_csv:
         st.error("Please upload a CSV first.")
@@ -111,7 +158,7 @@ if run_csv:
         except Exception as e:
             st.exception(e)
 
-# ---------------- JSON CLEANUP ----------------
+# --- JSON ---
 if run_json:
     if not up_json:
         st.error("Please upload a JSON first.")
@@ -142,95 +189,69 @@ if run_json:
         except Exception as e:
             st.exception(e)
 
-
-# --------------------------------- Generate ----------------------------------
-
+# =======================================================================
+# ------------------------------ Generate ------------------------------
 st.subheader("2) Generate outputs")
 
-# Fibre Action Button
-from fiber_action import (
-    read_uploaded_table,
-    transform_fibre_action_summary_grid,
-    transform_fibre_action_actions,
-    fibre_action_excel_bytes,
-    simplify_description,
-)
-from helper import extract_meta_from_label_value_df
+# --------------------- Fibre Action Button -----------------------------
+# Generate an Excel workbook with a single "Fibre Action" sheet.
+# Requires: the `compute_fibre_actions` function from fiber_action.py.
+# Overview:
+# 1. Read the uploaded CSV and JSON files.
+# 2. Use `compute_fibre_actions` to create a DataFrame representing the fibre actions.
+# 3. Export the DataFrame to an Excel file and offer it for download.
+from fiber_action import compute_fibre_actions, actions_to_workbook_bytes
+
+def _style_add_remove(row: pd.Series) -> list[str]:
+    a = str(row.get("Action", "")).lower()
+    if "add" in a:
+        return ["background-color: #009688; color: #FFFFFF"] * len(row)  # blue-green
+    if "remove" in a:
+        return ["background-color: #8e24aa; color: #FFFFFF"] * len(row)  # purple
+    return [""] * len(row)
 
 with st.container(border=True):
-    st.markdown("Fibre Action")
+    st.markdown("### Fibre Action")
 
-    btn_disabled = (up_csv is None)
-    if st.button("Generate", type="primary", key="btn_fibre_action", disabled=btn_disabled):
-        try:
-            with st.spinner("Building Fibre Action…"):
-                # 1) Read WO CSV
-                wo_df = read_uploaded_table(up_csv)
-
-                # 2) Build Summary grid (L1,V1,L2,V2)
-                # Pull values from the CSV (label:value layout)
-                pref = extract_meta_from_label_value_df(wo_df)
-
-                # (optional) keep sidebar/session in sync so fields flip from grey→white
-                st.session_state["wo_number"]   = pref.get("wo_id") or st.session_state.get("wo_number", "")
-                st.session_state["designer_name"]= pref.get("designer_name") or st.session_state.get("designer_name", "")
-                st.session_state["order_number"] = pref.get("order_id") or st.session_state.get("order_number", "")
-                st.session_state["date"]         = pref.get("date_ddmmyyyy") or st.session_state.get("date", "")
-
-                # Build the meta used by Summary
-                try:
-                    pref = extract_meta_from_label_value_df(wo_df)  # returns dict with keys like below in most setups
-                except Exception:
-                    pref = {}
-
-                meta = {
-                    "order_id":       st.session_state["order_number"],               # from CSV ORDER Number
-                    "wo_id":          st.session_state["wo_number"],                  # from CSV Work Order
-                    "designer_name":  st.session_state["designer_name"],              # from CSV Created By
-                    "designer_phone": st.session_state.get("designer_phone", ""),
-                    "date":           st.session_state["date"],                       # from CSV Created On (dd/mm/yyyy)
-                    "a_end":          st.session_state.get("a_end", ""),
-                    "z_end":          st.session_state.get("z_end", ""),
-                    "details":        "OSP DF",
-                }
-
-                summary_df = transform_fibre_action_summary_grid(wo_df, meta)
-
-                # 3) Fibre Action list
-                actions_df = transform_fibre_action_actions(wo_df)
-                if "Description" in actions_df.columns:
-                    actions_df["Description"] = actions_df["Description"].astype(str).map(simplify_description)
+    if st.button("Generate", type="primary", key="btn_fa", disabled=not ready):
+        csv_b, json_b, ok = require_inputs(need_csv=True, need_json=True)
+        if ok:
+            try:
+                df = compute_fibre_actions(csv_b, json_b)
+                if df.empty:
+                    st.warning("No splice/break actions detected.")
                 else:
-                    actions_df.insert(1, "Description", "—")
-                if "SAP" not in actions_df.columns:
-                    actions_df["SAP"] = ""
-                actions_df = actions_df[["Action", "Description", "SAP"]].fillna("")
+                    st.success(f"Built {len(df)} Fibre Action rows (CA-ordered, normalized).")
+                    st.session_state["fa_df"] = df
 
-                # 4) Preview
-                t1, t2 = st.tabs(["Summary", "Fibre Action"])
-                with t1:
-                    st.dataframe(summary_df, use_container_width=True, hide_index=True)
-                with t2:
-                    st.dataframe(actions_df, use_container_width=True, hide_index=True)
+                    # === Preview with row colors (Add = dark green, Remove = red) ===
+                    preview = df[["Action", "Description"]].copy()
+                    styled = preview.style.apply(_style_add_remove, axis=1)
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
 
-                # 5) Excel + download
-                xbytes = fibre_action_excel_bytes(summary_df, actions_df, title="fibre_action")
-            st.success(f"Fibre Action generated: {len(actions_df)} actions.")
-            st.download_button(
-                "Download fibre_action.xlsx",
-                data=xbytes,
-                file_name="fibre_action.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_fibre_action_xlsx",
-            )
+                    # Download: keeps your Excel coloring from fiber_action.py
+                    xlsx_bytes = actions_to_workbook_bytes(df)
+                    st.download_button(
+                        label="Download Fibre Action.xlsx",
+                        data=xlsx_bytes,
+                        file_name="Fibre_Action.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_fa",
+                    )
+            except Exception as e:
+                st.error(f"Failed to build Fibre Action: {e}")
+# ------------------------------------------------------------------------
 
-        except Exception as e:
-            st.exception(e)
-            st.error(f"Failed to generate Fibre Action: {e}")
+# ------------------------------------------------------------------------
 
 
-
-# Fibre Trace Button
+# --------------------- Fibre Trace Button -------------------------------
+# Generate an Excel workbook with Cover Page + Fibre Trace sheet.
+# Requires: the `build_fiber_trace` function from fiber_trace.py.
+# Overview:
+# 1. Read the uploaded JSON file.
+# 2. Use `build_fiber_trace` to create a DataFrame representing the fibre trace.
+#3. Export the DataFrame to an Excel file and offer it for download.
 from fiber_trace import generate_xlsx 
 
 with st.container(border=True):
@@ -266,73 +287,247 @@ with st.container(border=True):
 
         except Exception as e:
             st.error(f"Failed to generate Fibre Trace: {e}")
-#---------------------------------------------------------------
+#-------------------------------------------------------------------------
 
-# === Generate workbook & KML side by side ===
-# col_gen1, col_gen2 = st.columns(2)
+# --------------------- Activity Overview Map Button ---------------------
+# Parse the 'Connections' strings from the JSON, then parse each line into a table.
+# Requires: the `parse_device_table` function from parse_device_sheet.py.
+# Overview:
+# 1. Extract 'Connections' strings from the JSON robustly.
+# 2. For each 'Connections' string, parse it into a DataFrame using `parse_device_table`.
+# 3. Combine all DataFrames, deduplicate, and offer CSV download and preview.
 
-# # left: Activity Overview Map
-# with col_gen1:
+from parse_device_sheet import parse_device_table  
 
-# --------------------- Activity Overview Map ---------------------
-from parse_device_sheet import main as parse_device_main  # for activity overview parsing
 with st.container(border=True):
     st.markdown("Activity Overview Map")
-    # The button that triggers the generation
+
     if st.button("Generate", type="primary", key="btn_activity_overview", disabled=not ready):
-        # Make sure inputs are present and readable
-        wo_df, payload = require_inputs(up_csv, up_json)
-
-        # Try to use the exact logic from parse_device_sheet.py
         try:
-            from parse_device_sheet import gather_connections, parse_device_table  # exact logic
+            # 1) Inputs
+            _out = require_inputs(up_csv, up_json)
+            meta = {}
+            if isinstance(_out, tuple):
+                if len(_out) < 2:
+                    raise ValueError("require_inputs returned fewer than 2 items")
+                wo_df, payload = _out[0], _out[1]
+                if len(_out) > 2:
+                    meta = _out[2] or {}
+            elif isinstance(_out, dict):
+                wo_df   = _out["wo_df"]
+                payload = _out["payload"]
+                meta    = _out.get("meta", {}) or {}
+            else:
+                raise TypeError(f"Unexpected return type from require_inputs: {type(_out).__name__}")
 
-        except Exception:
-            gather_connections = None
-            parse_device_table = None
+            # 2) Normalize payload (dict), in case we got a JSON string/bytes
+            if isinstance(payload, (bytes, bytearray)):
+                try:
+                    payload = payload.decode("utf-8", "replace")
+                except Exception:
+                    pass
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    # leave as string if not valid JSON
+                    pass
 
-        # Fallback gatherer if functions weren't exported in the module
-        def _fallback_gather_connections(obj):
-            out = []
-            def rec(x):
-                if isinstance(x, dict):
-                    for k, v in x.items():
-                        if k == "Connections" and isinstance(v, str):
-                            out.append(v)
-                        else:
+            # 3) Helpers to gather 'Connections' robustly
+            _COORD_RE = re.compile(r"\b-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+\b")
+
+            def _looks_like_connection_blob(s: str) -> bool:
+                if not s:
+                    return False
+                s = s.strip()
+                return (
+                    "Address:" in s
+                    or "Splice" in s
+                    or "FOSC" in s
+                    or "PMID" in s
+                    or _COORD_RE.search(s) is not None
+                    or (len(s) >= 40 and s.count(":") >= 2)
+                )
+
+            def _dedupe(seq):
+                seen = set()
+                out = []
+                for x in seq:
+                    t = (x or "").strip()
+                    if t and t not in seen:
+                        seen.add(t); out.append(t)
+                return out
+
+            def _gather_connections_any(obj):
+                """Global scan: collect any dict key named 'Connections' anywhere."""
+                out = []
+                def rec(x):
+                    if isinstance(x, dict):
+                        for k, v in x.items():
+                            if isinstance(k, str) and k.strip().lower() == "connections":
+                                if isinstance(v, str) and v.strip():
+                                    out.append(v)
+                                elif isinstance(v, list):
+                                    for it in v:
+                                        if isinstance(it, str) and it.strip():
+                                            out.append(it)
+                                        else:
+                                            rec(it)
+                                else:
+                                    rec(v)
+                            else:
+                                rec(v)
+                    elif isinstance(x, list):
+                        for it in x:
+                            rec(it)
+                rec(obj)
+                return _dedupe(out)
+
+            def _gather_connections_loose(obj):
+                """Very loose: collect long-ish strings that look like device/connection blobs."""
+                out = []
+                def rec(x):
+                    if isinstance(x, dict):
+                        for _, v in x.items():
                             rec(v)
-                elif isinstance(x, list):
-                    for it in x:
-                        rec(it)
-            rec(obj)
-            return out
+                    elif isinstance(x, list):
+                        for it in x:
+                            rec(it)
+                    elif isinstance(x, str):
+                        if _looks_like_connection_blob(x):
+                            out.append(x)
+                rec(obj)
+                return _dedupe(out)
 
-        # Decide which gatherer we’ll use
-        _gather = gather_connections or _fallback_gather_connections
+            # 4) Try fast path first (the exact shape you showed), then global, then loose
+            conns = []
+            try:
+                if isinstance(payload, dict):
+                    r = payload.get("Report: Splice Details")
+                    if isinstance(r, list) and r:
+                        inner = r[0]
+                        if isinstance(inner, dict) and "" in inner:
+                            items = inner[""]
+                            if isinstance(items, list):
+                                conns = [d["Connections"] for d in items
+                                         if isinstance(d, dict) and isinstance(d.get("Connections"), str)]
+                                conns = _dedupe(conns)
+            except Exception:
+                pass
 
-        try:
-            conns = _gather(payload)
+            if not conns and isinstance(payload, (dict, list)):
+                conns = _gather_connections_any(payload)
+
+            if not conns and isinstance(payload, (dict, list)):
+                conns = _gather_connections_loose(payload)
+
             if not conns:
                 st.error("No 'Connections' strings found in the JSON under 'Report: Splice Details'.")
+                with st.expander("Debug details"):
+                    st.write("payload type:", type(payload).__name__)
+                    if isinstance(payload, dict):
+                        st.write("Top-level keys:", list(payload.keys())[:30])
+                        st.json(payload.get("Report: Splice Details", {}))
                 st.stop()
 
-            # Use the first unique string (how the script behaves)
-            conn_text = conns[0]
+            # # one tab per connection (# of conns found preview in tabs) -- IGNORE: don't need this function for now --
+            # # One or more 'Connections' blobs found. Each blob may contain multiple lines/devices.   
+            # # Optional: heads-up on what we found
+            # st.info(f"Found {len(conns)} 'Connections' blobs in the JSON File.")
 
-            # If parse_device_table is available, use it; otherwise fail loudly (you want exact logic)
+            # frames = []   # list of tuples: (idx, df_or_none, err_or_none)
+            # for idx, blob in enumerate(conns):
+            #     try:
+            #         cand = parse_device_table(blob.strip(), append_details=True)
+            #         if cand is not None and not cand.empty:
+            #             cand = cand.copy()
+            #             cand.insert(0, "connections_blob_index", idx)  # keep provenance
+            #             frames.append((idx, cand, None))
+            #         else:
+            #             frames.append((idx, None, "Empty table"))
+            #     except Exception as e:
+            #         frames.append((idx, None, str(e)))
+
+            # # Build tab titles with row counts
+            # titles = [
+            #     f"Conn {idx+1} ({0 if df is None else len(df)})"
+            #     for idx, df, err in frames
+            # ]
+            # tabs = st.tabs(titles)
+
+            # # Render one tab per connection
+            # for (tab, (idx, df_i, err)) in zip(tabs, frames):
+            #     with tab:
+            #         st.caption(f"Blob #{idx+1}")
+            #         if err:
+            #             st.error(f"Parse error: {err}")
+            #         elif df_i is None or df_i.empty:
+            #             st.warning("No rows in this blob.")
+            #         else:
+            #             # Per-tab download
+            #             csv_bytes_i = df_i.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            #             st.download_button(
+            #                 f"Download CSV for Conn {idx+1}",
+            #                 data=csv_bytes_i,
+            #                 file_name=f"activity_overview_conn_{idx+1}.csv",
+            #                 mime="text/csv",
+            #                 key=f"dl_activity_overview_conn_{idx+1}",
+            #             )
+            #             # Hide the provenance column in the preview (still in the CSV)
+            #             show_df = df_i.drop(columns=["connections_blob_index"], errors="ignore")
+            #             st.dataframe(show_df, use_container_width=True, hide_index=True)
+
+            # # Combined view/export
+            # valid_dfs = [df for _, df, err in frames if df is not None and not df.empty]
+            # if valid_dfs:
+            #     combined = pd.concat(valid_dfs, ignore_index=True)
+            #     before = len(combined)
+            #     combined = combined.drop_duplicates()
+            #     deduped = before - len(combined)
+
+            #     st.divider()
+            #     st.subheader("All connections (combined)")
+            #     if deduped > 0:
+            #         st.caption(f"Removed {deduped} duplicate rows when combining.")
+
+            #     csv_all = combined.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            #     st.download_button(
+            #         "Download ALL connections CSV",
+            #         data=csv_all,
+            #         file_name="activity_overview_all.csv",
+            #         mime="text/csv",
+            #         key="dl_activity_overview_all",
+            #     )
+            #     st.dataframe(combined, use_container_width=True, hide_index=True)
+            # else:
+            #     st.warning("No rows were produced from any 'Connections' blob.")
+            
+
+            # 5) Parse table
             if parse_device_table is None:
                 raise RuntimeError("`parse_device_table` not found in parse_device_sheet.py. Please export it.")
 
-            # Build the table (append_details=True keeps richer rows if your script supports it)
-            df = parse_device_table(conn_text, append_details=True)
+            df = None
+            errors = []
+            for idx, blob in enumerate(conns[:5]):  # try first few candidates in case some are malformed
+                try:
+                    cand = parse_device_table(blob.strip(), append_details=True)
+                    if cand is not None and not cand.empty:
+                        df = cand
+                        break
+                except Exception as e:
+                    errors.append(f"blob#{idx}: {e!s}")
 
             if df is None or df.empty:
-                st.warning("Activity Overview Map produced an empty table.")
+                st.warning("Activity Overview Map produced an empty table from all candidate 'Connections' blobs.")
+                if errors:
+                    with st.expander("Parser error details"):
+                        for msg in errors:
+                            st.write(msg)
                 st.stop()
 
-            # Prepare CSV bytes and a preview
+            # 6) Offer CSV + preview
             csv_bytes = df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-
             st.success(f"Generated Activity Overview table with {len(df)} rows.")
             st.download_button(
                 "Download Activity Overview CSV",
@@ -341,18 +536,22 @@ with st.container(border=True):
                 mime="text/csv",
                 key="dl_activity_overview_csv",
             )
-
-            # Preview (responsive, no index)
             st.dataframe(df, use_container_width=True, hide_index=True)
 
         except Exception as e:
-            st.error(f"Failed to generate Activity Overview Map: {e}")    
+            st.error(f"Failed to generate Activity Overview Map: {e}")
+# ------------------------------------------------------------------------  
 
-    # -----------------------------------------------------------------
+# --------------------- Generate KML Button ------------------------------
+# Generate a colorized KML from the WO.csv and the JSON.
+# Requires: the `to_kml` function from _to_kml.py.
+# Overview:
+# 1. Read the uploaded CSV and JSON files.
+# 2. Extract placemarks from both sources.
+# 3. Deduplicate placemarks.
+# 4. Generate a KML string and offer it for download.
 
-# # right: KML
-# with col_gen2:
-# --------------------- Generate KML Button ---------------------
+from _to_kml import to_kml 
 with st.container(border=True):
     st.markdown ("KML")
     if st.button("Generate", type="primary", key="btn_generate_kml", disabled=not ready):
@@ -377,5 +576,4 @@ with st.container(border=True):
             mime="application/vnd.google-earth.kml+xml",
             key="dl_kml",
         )
-
-# -----------------------------------------------------------------        
+# ------------------------------------------------------------------------        

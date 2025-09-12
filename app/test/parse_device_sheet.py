@@ -33,6 +33,70 @@ def classify_site(site_type: str):
     return 'Unknown',0,0
 
 # parse_device_sheet.py
+def _looks_like_connection_blob(s: str) -> bool:
+    """
+    Heuristics to accept either the explicit 'Connections' text OR the raw
+    device/connection blob commonly found under ["Report: Splice Details"][0][""][0].
+    """
+    if not s:
+        return False
+    s = s.strip()
+
+    # Strong indicators
+    if "Address:" in s:
+        return True
+    if "Splice" in s or "FOSC" in s or "PMID" in s:
+        return True
+    if _COORD_RE.search(s):  # looks like '43.1, -79.2'
+        return True
+
+    # Gentle fallback: moderately sized text with structure
+    if len(s) >= 40 and s.count(":") >= 2:
+        return True
+
+    return False
+
+def gather_connections(obj):
+    """
+    Return a list of candidate 'Connections' text blobs from the circuit JSON.
+    Supports two common shapes:
+      A) {"Report: Splice Details":[{"":[{"Connections":"...text..."}]}]}
+      B) {"Report: Splice Details":[{"":["...text..."]}]}
+    Falls back to strings that look like connection/device blobs.
+    """
+    out = []
+
+    def rec(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                # explicit field
+                if k == "Connections" and isinstance(v, str) and v.strip():
+                    out.append(v)
+                    continue
+                # common containers under the target report
+                if k in ("Report: Splice Details", ""):
+                    rec(v)
+                    continue
+                rec(v)
+        elif isinstance(x, list):
+            for it in x:
+                rec(it)
+        elif isinstance(x, str):
+            if _looks_like_connection_blob(x):
+                out.append(x)
+
+    rec(obj)
+
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for s in out:
+        t = s.strip()
+        if t and t not in seen:
+            seen.add(t)
+            deduped.append(t)
+    return deduped
+
 def parse_device_table(connections_text: str, append_details=False) -> pd.DataFrame:
     lat=lon=None; site_type=None
     rows=[]
@@ -174,61 +238,7 @@ def extract_splice_connections(payload: Dict[str, Any]) -> Tuple[List[Dict[str, 
 
     return [], "No 'Connections' strings found under the 'Splice Details' section."
 
-def _looks_like_connection_blob(s: str) -> bool:
-    if not s:
-        return False
-    s = s.strip()
-    if "Address:" in s:
-        return True
-    if "Splice" in s or "FOSC" in s or "PMID" in s:
-        return True
-    if _COORD_RE.search(s):  # e.g., '43.64, -79.38'
-        return True
-    # general structured fallback: some colons and decent length
-    if len(s) >= 40 and s.count(":") >= 2:
-        return True
-    return False
-
-# --- REPLACE your existing gather_connections with this ---
-def gather_connections(obj):
-    """
-    Return a list of candidate 'Connections' text blobs from the circuit JSON.
-    Supports shapes like:
-      A) {"Report: Splice Details":[{"":[{"Connections":"...text..."}]}]}
-      B) {"Report: Splice Details":[{"":["...text..."]}]}
-    Also falls back to strings that look like connection/device blobs.
-    """
-    out = []
-
-    def rec(x):
-        if isinstance(x, dict):
-            for k, v in x.items():
-                # explicit key at any depth
-                if k == "Connections" and isinstance(v, str) and v.strip():
-                    out.append(v)
-                    continue
-                # empty-string containers are common under the report section
-                if k in ("Report: Splice Details", ""):
-                    rec(v)
-                    continue
-                rec(v)
-        elif isinstance(x, list):
-            for it in x:
-                rec(it)
-        elif isinstance(x, str):
-            if _looks_like_connection_blob(x):
-                out.append(x)
-
-    rec(obj)
-
-    # Deduplicate while preserving order
-    seen = set(); deduped = []
-    for s in out:
-        t = s.strip()
-        if t and t not in seen:
-            seen.add(t)
-            deduped.append(t)
-    return deduped
+# ---
 
 
 

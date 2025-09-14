@@ -245,7 +245,7 @@ with st.container(border=True):
                         data=xlsx,
                         file_name="Fibre_Action.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
+                        type="secondary",
                     )
             except Exception as e:
                 st.error(f"Failed to build Fibre Action: {e}")
@@ -260,17 +260,12 @@ with st.container(border=True):
 # 1. Read the uploaded JSON file.
 # 2. Use `build_fiber_trace` to create a DataFrame representing the fibre trace.
 # 3. Export the DataFrame to an Excel file and offer it for download.
-# --------------------- Fibre Trace Button -------------------------------
-# --------------------- Fibre Trace Button -------------------------------
-import json
-import pandas as pd
-import streamlit as st
 from fiber_trace import (
     build_trace_and_actions_from_sources,  # gives df + gmaps (no content change)
     write_xlsx_bytes,
 )
 
-# ---- Color palette (matches your output) ----
+# ---- Color palette ----
 _COLOR_MAP = {
     "equipment": "#006400",
     "equipment location": "#006400",
@@ -360,12 +355,11 @@ with st.container(border=True):
                 file_name="fibre_trace.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_ft_xlsx",
+                type="secondary",
             )
 
         except Exception as e:
             st.error(f"Failed to generate Fibre Trace: {e}")
-
-
 
 # -----------------------------------------------------------------------
 
@@ -377,7 +371,6 @@ with st.container(border=True):
 # 1. Extract 'Connections' strings from the JSON robustly.
 # 2. For each 'Connections' string, parse it into a DataFrame using `parse_device_table`.
 # 3. Combine all DataFrames, deduplicate, and offer CSV download and preview.
-
 from parse_device_sheet import parse_device_table  
 
 with st.container(border=True):
@@ -616,6 +609,7 @@ with st.container(border=True):
                 file_name="activity_overview.csv",
                 mime="text/csv",
                 key="dl_activity_overview_csv",
+                type="secondary",
             )
             st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -633,8 +627,8 @@ with st.container(border=True):
 # 2. Extract placemarks from both sources.
 # 3. Deduplicate placemarks.
 # 4. Generate a KML string and offer it for download.
-
 from _to_kml import to_kml 
+
 with st.container(border=True):
     st.markdown ("KML")
     if st.button("Generate", type="primary", key="btn_generate_kml", disabled=not ready):
@@ -658,5 +652,6 @@ with st.container(border=True):
             file_name=f"{order_number}_Trace.kml",
             mime="application/vnd.google-earth.kml+xml",
             key="dl_kml",
+            type="secondary",
         )
 # ------------------------------------------------------------------------        

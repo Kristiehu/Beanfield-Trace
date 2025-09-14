@@ -1,356 +1,388 @@
-# filename: fiber_trace.py
+# fiber_trace.py — Build Fibre Trace and merge actions (from fibre_action.compute_fibre_actions)
 from __future__ import annotations
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
-import json, re
+from typing import Dict, List, Optional, Tuple, Union, IO
+import io, json, re
 import pandas as pd
 
-# =========================
-# Schema
-# =========================
+# Public columns (sheet schema)
 COLUMNS = [
     "Detail Item",
     "Report: Splice DetailsConnections",
     "# of Fbrs",
     "WO Action#",
     "Length",
-    "OTDR Length",      
+    "OTDR Length",
     "Meter Marks",
     "Eq Location",
     "EQ Type",
-    "Activity",
-    "Tray",
-    "Slot",
-    "Map It",
+    "Google Map",
 ]
 
-# =========================
-# Utilities
-# =========================
-_RX_PMID         = re.compile(r"\bPMID\s*:\s*(\d+)", re.I)
-_RX_APTUM_F      = re.compile(r"\bAptum\s*ID\s*:\s*\.?F(\d+)", re.I)
-_RX_LEN_CALC     = re.compile(r"(?:Calculated|Cable Length Calculated)\s*:\s*([0-9]+)", re.I)
-_RX_LEN_OTDR     = re.compile(r"(?:OTDR|Cable Length\s*:?OTDR)\s*[: ]\s*([0-9]+)", re.I)
-_RX_RANGE        = re.compile(r"\[([0-9]+)\s*-\s*([0-9]+)\]")
-_RX_FX           = re.compile(r"\.F(\d+)", re.I)
+# ---------- helpers ----------
+def _decode(s: str) -> str:
+    if not isinstance(s, str): return ""
+    return (s.replace("<COMMA>", ",").replace("<COLON>", ":")
+              .replace("<OPEN>", "(").replace("<CLOSE>", ")")
+              .replace("<AND>", "&").replace("\\n", "\n").strip())
 
-def _compact_numbers(nums: Iterable[int]) -> str:
-    """Return '3,5-8,11' from [3,5,6,7,8,11]."""
-    s = sorted(set(nums))
-    if not s:
-        return ""
-    out: List[str] = []
-    start = prev = s[0]
+_HDR  = re.compile(r"^\s*([^,]+)\s*,\s*([^,]+)\s*,\s*Address:(.*?)\(\)\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*:\s*:\s*(.+?)\s*$")
+_PMID = re.compile(r"\b(?:n?PMID)\s*[: ]\s*([A-Za-z0-9_-]+)", re.I)
+_FNUM = re.compile(r"\.F\s*([0-9]+)")
+_CALC = re.compile(r"(?:Calculated|Cable\s*Length\s*Calculated)\s*:\s*([0-9]+)", re.I)
+_OTDR = re.compile(r"OTDR\s*[:; -]\s*([0-9]+)", re.I)
+
+def _pmids(s: str) -> List[str]:
+    return [m.group(1).upper() for m in _PMID.finditer(s or "")]
+
+def _compact(nums: List[int]) -> str:
+    s = sorted({int(n) for n in nums if str(n).isdigit()})
+    if not s: return ""
+    out=[]; a=b=s[0]
     for n in s[1:]:
-        if n == prev + 1:
-            prev = n
-            continue
-        # flush
-        if start == prev:
-            out.append(f"{start}")
-        else:
-            out.append(f"{start}-{prev}")
-        start = prev = n
-    # flush last
-    if start == prev:
-        out.append(f"{start}")
-    else:
-        out.append(f"{start}-{prev}")
-    return ",".join(out)
+        if n==b+1: b=n
+        else: out.append((a,b)); a=b=n
+    out.append((a,b))
+    return ",".join(str(x) if x==y else f"{x}-{y}" for x,y in out)
 
-def _extract_pmids(line: str) -> List[int]:
-    return [int(m.group(1)) for m in _RX_PMID.finditer(line or "")]
-
-def _extract_aptum_f(line: str) -> List[int]:
-    return [int(m.group(1)) for m in _RX_APTUM_F.finditer(line or "")]
-
-def _extract_lengths_blob(cable_lengths: List[dict]) -> Dict[int, Tuple[Optional[int], Optional[int]]]:
-    """
-    Turn:
-      [{"PMID: 34377": "Calculated: 265m"}, {"PMID: 35844": "OTDR: 125m, Calculated: 106m"}]
-    into:
-      {34377: (265, None), 35844: (106, 125)}
-    """
-    out: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
-    for item in cable_lengths or []:
-        for k, v in item.items():
-            pmid_match = _RX_PMID.search(k)
-            if not pmid_match:
-                continue
-            pmid = int(pmid_match.group(1))
-            calc = None
-            otdr = None
-            # normalize value to plain "words" so "m" suffix doesn't matter
-            text = str(v)
-            m_calc = _RX_LEN_CALC.search(text)
-            if m_calc:
-                calc = int(m_calc.group(1))
-            m_otdr = _RX_LEN_OTDR.search(text)
-            if m_otdr:
-                otdr = int(m_otdr.group(1))
-            out[pmid] = (calc, otdr)
+def _get_connection_blobs(payload: dict) -> List[str]:
+    blobs=[]
+    try:
+        arr = payload.get("Report: Splice Details", [])
+        if isinstance(arr, list) and arr:
+            inner = arr[0].get("", [])
+            if isinstance(inner, list):
+                for it in inner:
+                    s = it.get("Connections")
+                    if isinstance(s, str) and s.strip():
+                        blobs.append(s)
+    except Exception:
+        pass
+    seen=set(); out=[]
+    for s in blobs:
+        if s not in seen:
+            out.append(s); seen.add(s)
     return out
 
-def _build_equipment_location_line(location: str, typ: str) -> Tuple[List[str], Optional[str]]:
-    value = f"{location}, {typ}".strip().strip(",")
-    row = [
-        "Equipment Location",
-        value,
-        "", "", "", "", "", ""  # (# of Fbrs, WO Action#, Length, ~OTDR Length, Meter Marks, Google Maps)
-    ]
-    # Google Maps URL can be attached by your upstream (if you have lat/lon),
-    # here we keep it blank and let the caller fill if available.
-    return row, None
-
-def _build_equipment_line(equipment: str) -> List[str]:
-    return ["Equipment", equipment, "", "", "", "", "", ""]
-
-def _build_cable_attach_lines(cables: List[dict]) -> List[List[str]]:
-    rows: List[List[str]] = []
-    for idx, item in enumerate(cables or [], start=1):
-        # allow {"CA1": "..."} style
-        if isinstance(item, dict) and item:
-            label, text = list(item.items())[0]
-            value = f"{label}: {text}"
-        else:
-            value = str(item)
-        rows.append(["Cable[attach]", value, "", "", "", "", "", ""])
-    return rows
-
-def _group_existing_splices(splice_lines: List[str]) -> Optional[Tuple[str, int]]:
-    """
-    Given many line items like:
-      "PMID: 34377, Aptum ID: .F243 -- Splice -- PMID: 35844, Aptum ID: .F387"
-    return:
-      ("PMID: 34377, Aptum ID: .F[243-246] -- Existing Splice(s) -- PMID: 35844, Aptum ID: .F[387-390]", 4)
-    Assumptions:
-      - All these lines belong to the current equipment block.
-      - PMIDs on both sides are consistent (if multiple distinct pairs exist, we keep the first consistent pair).
-    """
-    if not splice_lines:
-        return None
-    # find the dominant pair (left PMID, right PMID)
-    pairs: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
-    for line in splice_lines:
-        pmids = _extract_pmids(line)
-        if len(pmids) < 2:
-            # we require Left/Right PMIDs
+def _split(blob: str) -> List[List[str]]:
+    s = _decode(blob)
+    parts = re.split(r"\n\.\n", s.strip())
+    sections=[]
+    for p in parts:
+        if not p.strip(): 
             continue
-        left_pmid, right_pmid = pmids[0], pmids[-1]
-        left_fs  = _extract_aptum_f(line)
-        # heuristic: first half of Fs belong to left; second half belong to right
-        # but many lines format as exactly two .F numbers – one per side – which is ideal
-        if len(left_fs) >= 2:
-            mid = len(left_fs) // 2
-            lfs = [left_fs[0]]
-            rfs = [left_fs[-1]]
-        elif len(left_fs) == 1:
-            lfs, rfs = [left_fs[0]], []
+        lines=[ln for ln in p.strip().splitlines() if ln.strip()]
+        while lines and lines[0].strip()==".": lines.pop(0)
+        if lines: sections.append(lines)
+    return sections
+
+def _parse_section(lines: List[str]):
+    header = _decode(lines[0] if lines else "")
+    gmap_url=None; eq_loc=None; eq_type=None
+    locline = header
+    m=_HDR.match(header)
+    if m:
+        city, site, _addr, lat, lon, typ = m.groups()
+        locline  = f"{city}, {site}, {typ}".strip().strip(",")
+        gmap_url = f"https://www.google.com/maps?q={lat},{lon}"
+        eq_loc   = f"{city}, {site}".strip().strip(",")
+        eq_type  = typ.strip()
+
+    equip   = _decode(lines[1]) if len(lines)>1 else ""
+    cables: List[str] = []
+    splices: List[str] = []  # JSON splice lines => Existing Splice grouping
+    lengths: Dict[str, Tuple[Optional[int], Optional[int]]] = {}
+    pmid_sig=set()
+
+    for raw in lines[2:]:
+        t=_decode(raw); up=t.upper()
+        if t.upper().startswith("CA"):
+            cables.append(t); pmid_sig.update(_pmids(t))
+        elif "-- SPLICE --" in up:
+            splices.append(t); pmid_sig.update(_pmids(t))
+        elif ("CABLE LENGTH" in up) or ("CALCULATED" in up) or ("OTDR" in up):
+            ids=_pmids(t)
+            if not ids: continue
+            pmid=ids[0]; calc=None; otdr=None
+            mC=_CALC.search(t); mO=_OTDR.search(t)
+            if mC: calc=int(mC.group(1))
+            if mO: otdr=int(mO.group(1))
+            prev=lengths.get(pmid,(None,None))
+            lengths[pmid]=(calc if calc is not None else prev[0],
+                           otdr if otdr is not None else prev[1])
+            pmid_sig.add(pmid)
+
+    return locline, equip, cables, splices, lengths, pmid_sig, gmap_url, eq_loc, eq_type
+
+def _group_splices(splices: List[str]) -> Optional[Tuple[str,int]]:
+    if not splices: return None
+    pairs={}
+    for s in splices:
+        pmids=_pmids(s)
+        fnums=[int(x) for x in _FNUM.findall(s)]
+        if len(pmids)>=2 and len(fnums)>=2:
+            lp, rp = pmids[0], pmids[-1]
+            L, R   = fnums[0], fnums[-1]
+            d=pairs.setdefault((lp,rp), {"L":[], "R":[]})
+            d["L"].append(L); d["R"].append(R)
+    if not pairs: return None
+    (lp,rp), LR = max(pairs.items(), key=lambda kv: len(kv[1]["L"]))
+    Lc=_compact(LR["L"]); Rc=_compact(LR["R"]); cnt=len(set(LR["L"]))
+    text=f"PMID: {lp}, Aptum ID: .F[{Lc}] -- Existing Splice(s) -- PMID: {rp}, Aptum ID: .F[{Rc}]"
+    return text, cnt
+
+# ---------- core build ----------
+def build_fiber_trace(payload: dict) -> Tuple[pd.DataFrame, List[Optional[str]], List[Tuple[int,int]], List[dict], str, str]:
+    rows: List[List[object]] = []
+    gmaps: List[Optional[str]] = []
+    ranges: List[Tuple[int,int]] = []
+    meta  : List[dict] = []
+
+    agg_map={}; order=[]
+    for blob in _get_connection_blobs(payload):
+        for lines in _split(blob):
+            locline,equip,cables,splices,lengths,pmid_sig,gmap_url,eq_loc,eq_type=_parse_section(lines)
+            key=(locline,equip)
+            if key not in agg_map:
+                agg_map[key]={"gmap":gmap_url,"eq_loc":eq_loc,"eq_type":eq_type,
+                              "cables":set(),"splices":[],"lengths":{},"pmids":set()}
+                order.append(key)
+            A=agg_map[key]
+            A["cables"].update(cables)
+            A["splices"].extend(splices)
+            A["pmids"].update(pmid_sig)
+            for pmid,(calc,otdr) in lengths.items():
+                prev=A["lengths"].get(pmid,(None,None))
+                A["lengths"][pmid]=(calc if calc is not None else prev[0],
+                                    otdr if otdr is not None else prev[1])
+
+    # A/Z derived from first/last equipment-location in JSON order (fallback to header line)
+    a_loc = (agg_map[order[0]]["eq_loc"] or order[0][0]) if order else ""
+    z_loc = (agg_map[order[-1]]["eq_loc"] or order[-1][0]) if order else ""
+
+    # Add A/Z header rows
+    rows.append(["A Location", a_loc or "", "", "", "", "", "", "", "", ""]); gmaps.append(None)
+    rows.append(["Z Location", z_loc or "", "", "", "", "", "", "", "", ""]); gmaps.append(None)
+
+    for key in order:
+        locline,equip = key
+        A=agg_map[key]
+        start=len(rows)
+        rows.append(["Equipment Location", locline, "", "", "", "", "", A["eq_loc"] or "", A["eq_type"] or "", "Google Map" if A["gmap"] else ""])
+        gmaps.append(A["gmap"])
+        if equip:
+            rows.append(["Equipment", equip, "", "", "", "", "", "", "", ""]); gmaps.append(None)
+        for c in sorted(A["cables"]):
+            rows.append(["Cable[attach]", c, "", "", "", "", "", "", "", ""]); gmaps.append(None)
+        grp=_group_splices(A["splices"])
+        if grp:
+            text,cnt=grp
+            rows.append(["Existing Splice", text, int(cnt), "", "", "", "", "", "", ""]); gmaps.append(None)
+        for pmid in sorted(A["lengths"].keys()):
+            calc,otdr=A["lengths"][pmid]
+            line=f"PMID: {pmid}: " + (f"OTDR: {otdr}m, " if otdr is not None else "") + (f"Calculated: {calc}m" if calc is not None else "")
+            rows.append(["CableInfo", line, "", "", calc if calc is not None else "", otdr if otdr is not None else "", "", "", "", ""]); gmaps.append(None)
+        end=len(rows)-1
+        ranges.append((start,end))
+        meta.append({"start":start,"end":end,"locline":locline,"equipment":equip,"pmids":set(A["pmids"])})
+
+    df = pd.DataFrame(rows, columns=COLUMNS).fillna("")
+    for col in ("# of Fbrs","Length","OTDR Length"): df[col]=pd.to_numeric(df[col], errors="coerce")
+    return df, gmaps, ranges, meta, a_loc, z_loc
+
+# ---------- actions (from fibre_action) ----------
+_ACTION_PMIDS = re.compile(r'\b([A-Za-z0-9#._/-]+)\s*\[[^\]]+\]')
+def _pmids_loose_for_action(desc: str) -> List[str]:
+    # Extract IDs like "41121 [73-84]" → "41121" (also keeps alnum tokens like 40084B)
+    out=[]
+    for m in _ACTION_PMIDS.finditer(str(desc) or ""):
+        tok = m.group(1)
+        out.append(tok.upper())
+    # also consider explicit "PMID: X" if present
+    out.extend(_pmids(desc))
+    return list(dict.fromkeys(out))  # de-dup preserve order
+
+def _pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns: return c
+    norm = {re.sub(r"\s+", "", c).lower(): c for c in df.columns}
+    for want in candidates:
+        key = re.sub(r"\s+", "", want).lower()
+        if key in norm: return norm[key]
+    return None
+
+_RANGE = re.compile(r"\[([0-9]+)(?:\s*-\s*([0-9]+))?\]")
+
+def _fibercount(s: str) -> Optional[int]:
+    rngs=[(int(a), int(b) if b else int(a)) for a,b in _RANGE.findall(str(s) or "")]
+    if not rngs: return None
+    return max((b-a+1) for a,b in rngs)
+
+def _label_from_actiondesc(action: str, desc: str) -> Optional[str]:
+    a=(action or "").lower(); d=(desc or "").lower()
+    if ("remove" in a) or ("break" in d): return "Break Splice"
+    if ("add" in a) or ("splice" in d):   return "Splice Required"
+    return None
+
+def _classify_and_filter(acts: pd.DataFrame) -> pd.DataFrame:
+    a_col=_pick_col(acts, ["Action"]); d_col=_pick_col(acts, ["Description"])
+    if not a_col or not d_col: return pd.DataFrame(columns=["Action","Description","SAP"])
+    out=acts[[a_col,d_col] + ([c for c in acts.columns if c.lower()=="sap"] if "SAP" in acts.columns else [])].copy()
+    out.columns=["Action","Description"] + (["SAP"] if out.shape[1]==3 else [])
+    # keep only Remove (E) and Add / Splice
+    mask = out["Action"].str.contains(r"remove", case=False, na=False) | \
+           out["Action"].str.contains(r"add", case=False, na=False) | \
+           out["Description"].str.contains(r"(?:break|splice)", case=False, na=False)
+    return out[mask].reset_index(drop=True)
+
+def insert_actions(df: pd.DataFrame, gmaps: List[Optional[str]],
+                   ranges: List[Tuple[int,int]], meta: List[dict],
+                   actions_df: Optional[pd.DataFrame]) -> Tuple[pd.DataFrame, List[Optional[str]], Dict[str,int]]:
+    if actions_df is None or actions_df.empty: 
+        return df, gmaps, {"inserted":0,"adds":0,"removes":0}
+
+    acts = _classify_and_filter(actions_df)
+    if acts.empty:
+        return df, gmaps, {"inserted":0,"adds":0,"removes":0}
+
+    out=df.copy(); gm=gmaps[:]
+    addmap: Dict[int, List[List[object]]] = {}
+    stats={"inserted":0,"adds":0,"removes":0}
+
+    for _, row in acts.iterrows():
+        action=str(row.get("Action",""))
+        desc  =str(row.get("Description",""))
+        label = _label_from_actiondesc(action, desc)
+        if not label: 
+            continue
+
+        pmidset=set(_pmids_loose_for_action(desc))
+        if not pmidset:
+            continue
+
+        # find best equipment-block by PMID overlap
+        best=None; best_ov=0
+        for bi, m in enumerate(meta):
+            ov=len(pmidset & m["pmids"])
+            if ov>best_ov: best_ov=ov; best=bi
+        if best is None or best_ov==0:
+            continue
+
+        fbrs_val = _fibercount(desc) or ""
+        new_row=[label, desc,
+                 fbrs_val,
+                 action,  # put the full "WO Action#" string
+                 "", "", "", "", "", ""]
+        addmap.setdefault(best, []).append(new_row)
+
+        stats["inserted"]+=1
+        if "remove" in action.lower(): stats["removes"]+=1
+        elif "add" in action.lower():  stats["adds"]+=1
+
+    # insert from bottom to top so indices don’t shift
+    for bi in sorted(addmap.keys(), reverse=True):
+        start,end=ranges[bi]
+        block=out.iloc[start:end+1]
+        insert_at=start+1
+        cab_rows=block[block["Detail Item"]=="Cable[attach]"]
+        if not cab_rows.empty:
+            insert_at=cab_rows.index[-1]+1
         else:
-            lfs, rfs = [], []
+            eq_rows=block[block["Detail Item"]=="Equipment"]
+            if not eq_rows.empty:
+                insert_at=eq_rows.index[-1]+1
 
-        # Alternatively, a more robust parse for exactly two .F values:
-        both = list(_RX_FX.finditer(line))
-        if len(both) >= 2:
-            lfs = [int(both[0].group(1))]
-            rfs = [int(both[-1].group(1))]
+        add_df=pd.DataFrame(addmap[bi], columns=out.columns)
+        out=pd.concat([out.iloc[:insert_at], add_df, out.iloc[insert_at:]], ignore_index=True)
+        gm = gm[:insert_at] + [None]*len(add_df) + gm[insert_at:]
 
-        pairs.setdefault((left_pmid, right_pmid), [])
-        for L in lfs or [None]:
-            for R in rfs or [None]:
-                if L is not None and R is not None:
-                    pairs[(left_pmid, right_pmid)].append((L, R))
+    return out, gm, stats
 
-    if not pairs:
-        return None
-
-    # pick the pair with most observations
-    (lp, rp), fibers = max(pairs.items(), key=lambda kv: len(kv[1]))
-    left_numbers  = [a for a, _ in fibers]
-    right_numbers = [b for _, b in fibers]
-
-    left_comp  = _compact_numbers(left_numbers)
-    right_comp = _compact_numbers(right_numbers)
-    fbrs_count = len(set(left_numbers))  # # of fibers from left side (should match right if 1-to-1)
-
-    left_part  = f"PMID: {lp}, Aptum ID: .F[{left_comp}]"  if left_comp  else f"PMID: {lp}"
-    right_part = f"PMID: {rp}, Aptum ID: .F[{right_comp}]" if right_comp else f"PMID: {rp}"
-    text = f"{left_part} -- Existing Splice(s) -- {right_part}"
-    return text, fbrs_count
-
-def _build_cableinfo_lines(cable_lengths_map: Dict[int, Tuple[Optional[int], Optional[int]]]) -> List[List[str]]:
-    rows: List[List[str]] = []
-    # deterministic order by PMID
-    for pmid in sorted(cable_lengths_map.keys()):
-        calc, otdr = cable_lengths_map[pmid]
-        line = f"PMID: {pmid}: " + \
-               (f"OTDR: {otdr}m, " if otdr is not None else "") + \
-               (f"Calculated: {calc}m" if calc is not None else "")
-        rows.append(["CableInfo", line, "", "", 
-                     (calc if calc is not None else ""), 
-                     (otdr if otdr is not None else ""),
-                     "", ""])
-    return rows
-
-# =========================
-# Transformer (one location)
-# =========================
-def build_location_block(location_payload: dict) -> Tuple[List[List[str]], List[Optional[str]]]:
-    """
-    Input example:
-    {
-      "Location": "Montreal, PA21483",
-      "Type": "Beanfield Manhole/Handwell with Splice Box",
-      "Equipment": "21483-450D-1 : OSP Splice Box - 600D : PA21483, 450-1 FOSC",
-      "Cables": [{"CA1": "PMID: 33557, 288F, 1250 Rene Levesque, 450-2"}, {"CA2": "PMID: 33805, 288F, PA15393"}],
-      "Splice": [
-          "PMID: 34377, Aptum ID: .F243 -- Splice -- PMID: 35844, Aptum ID: .F387",
-          "PMID: 34377, Aptum ID: .F244 -- Splice -- PMID: 35844, Aptum ID: .F388",
-          "PMID: 34377, Aptum ID: .F245 -- Splice -- PMID: 35844, Aptum ID: .F389",
-          "PMID: 34377, Aptum ID: .F246 -- Splice -- PMID: 35844, Aptum ID: .F390"
-      ],
-      "Cable Lengths": [
-         {"PMID: 34377": "Calculated: 265m"},
-         {"PMID: 35844": "OTDR: 125m, Calculated: 106m"}
-      ]
-    }
-    """
-    rows: List[List[str]] = []
-    urls: List[Optional[str]] = []   # parallel list for Google Maps url (set only on location row)
-
-    # 1) Equipment Location
-    loc = str(location_payload.get("Location", "")).strip()
-    typ = str(location_payload.get("Type", "")).strip()
-    row_loc, link = _build_equipment_location_line(loc, typ)
-    rows.append(row_loc)
-    urls.append(link)
-
-    # 2) Equipment
-    eq = str(location_payload.get("Equipment", "")).strip()
-    if eq:
-        rows.append(_build_equipment_line(eq)); urls.append(None)
-
-    # 3) Cable[attach] list
-    cables = location_payload.get("Cables") or []
-    for r in _build_cable_attach_lines(cables):
-        rows.append(r); urls.append(None)
-
-    # 4) Existing Splice grouping (within this equipment only)
-    splice_val = location_payload.get("Splice")
-    splice_lines: List[str] = []
-    if isinstance(splice_val, list):
-        splice_lines = [str(x) for x in splice_val]
-    elif isinstance(splice_val, str) and splice_val.strip():
-        # If you still sometimes store a single delimited string
-        splice_lines = [s for s in re.split(r"\n|\r\n", splice_val) if s.strip()]
-
-    grouped = _group_existing_splices(splice_lines)
-    if grouped:
-        text, cnt = grouped
-        rows.append(["Existing Splice", text, int(cnt), "", "", "", "", ""])
-        urls.append(None)
-
-    # 5) CableInfo (with numeric Length / ~OTDR Length)
-    cable_lengths_map = _extract_lengths_blob(location_payload.get("Cable Lengths") or [])
-    for r in _build_cableinfo_lines(cable_lengths_map):
-        rows.append(r); urls.append(None)
-
-    return rows, urls
-
-# =========================
-# High-level builders
-# =========================
-def build_overview_df(json_path: Path) -> Tuple[pd.DataFrame, List[Optional[str]]]:
-    """
-    Read your work-order JSON (already pre-cleaned), iterate locations, emit a single DF.
-    Expected top-level schema: { "locations": [ <location_payload>, ... ] }
-    If your file is raw, adapt here to reach that shape.
-    """
-    data = json.loads(Path(json_path).read_text(encoding="utf-8"))
-
-    # Be flexible: accept either {"locations": [...]} or a flat single location object
-    locs = data.get("locations")
-    if isinstance(locs, list):
-        location_list = locs
-    else:
-        # fallback: if the file *is already* a single location payload
-        location_list = [data]
-
-    all_rows: List[List[str]] = []
-    all_urls: List[Optional[str]] = []
-    for block in location_list:
-        rows, urls = build_location_block(block)
-        all_rows.extend(rows)
-        all_urls.extend(urls)
-
-    df = pd.DataFrame(all_rows, columns=COLUMNS)
-    return df, all_urls
-
-# =========================
-# Excel export with first-column coloring
-# =========================
-def write_styled_excel(df: pd.DataFrame, urls: List[Optional[str]], out_path: Path, sheet: str = "Sheet1") -> None:
-    """
-    Writes the dataframe to XLSX using xlsxwriter and applies color to the *first column*
-    based on the “Detail Item” value.
-      - Equipment / Equipment Location: dark green
-      - Cable[attach]: light green
-      - Break Splice: red
-      - Splice required: orange
-      - CableInfo: blue
-      - Existing Splice: (treat as 'Equipment' tone? Spec didn’t mandate; we leave default (black) or choose dark green)
-    """
-    out_path = Path(out_path)
-    with pd.ExcelWriter(out_path, engine="xlsxwriter") as xw:
+# ---------- writer (fills + Google Map hyperlinks) ----------
+def write_xlsx_bytes(df: pd.DataFrame, gmaps: List[Optional[str]], sheet: str = "Fibre Trace") -> bytes:
+    bio = io.BytesIO()
+    with pd.ExcelWriter(bio, engine="xlsxwriter") as xw:
         df.to_excel(xw, index=False, sheet_name=sheet)
-        wb  = xw.book
-        ws  = xw.sheets[sheet]
+        wb=xw.book; ws=xw.sheets[sheet]
 
-        # Formats
-        fmt_loc   = wb.add_format({"font_color": "#0B6623", "bold": True})  # dark green
-        fmt_equip = wb.add_format({"font_color": "#0B6623", "bold": False})
-        fmt_cab   = wb.add_format({"font_color": "#32CD32"})                # light/grass green
-        fmt_break = wb.add_format({"font_color": "#FF0000"})                 # red
-        fmt_req   = wb.add_format({"font_color": "#FF8C00"})                 # orange
-        fmt_info  = wb.add_format({"font_color": "#0000FF"})                 # blue
-
-        # Column widths (auto-ish)
-        for ci, col in enumerate(df.columns):
-            width = max(10, min(80, int(df[col].astype(str).map(len).max() + 2)))
+        # autosize
+        df_str=df.astype(str)
+        for ci,col in enumerate(df.columns):
+            width=min(80, max(10, df_str[col].map(len).max()+2))
             ws.set_column(ci, ci, width)
 
-        # Apply first-column styling and optional link in "Google Maps"
-        detail_col = 0
-        link_col   = df.columns.get_loc("Google Maps") if "Google Maps" in df.columns else None
+        # first-column fills
+        fmt_loc   = wb.add_format({"bg_color":"#CDEFD1","bold":True})  # gentle green
+        fmt_equip = wb.add_format({"bg_color":"#CDEFD1"})
+        fmt_cab   = wb.add_format({"bg_color":"#B8F1B0"})
+        fmt_break = wb.add_format({"bg_color":"#FF0000"})   # Break: red
+        fmt_req   = wb.add_format({"bg_color":"#FFA500"})   # Splice/Add: orange
+        fmt_info  = wb.add_format({"bg_color":"#ADD8E6"})
+        link_fmt  = wb.add_format({"font_color":"blue","underline":1})
+
+        c_first = 0
+        c_gmap  = df.columns.get_loc("Google Map")
 
         for r in range(len(df)):
-            label = str(df.iat[r, detail_col])
-            if   label == "Equipment Location":
-                ws.write(r + 1, detail_col, label, fmt_loc)
-            elif label == "Equipment":
-                ws.write(r + 1, detail_col, label, fmt_equip)
-            elif label == "Cable[attach]":
-                ws.write(r + 1, detail_col, label, fmt_cab)
-            elif label == "Break Splice":
-                ws.write(r + 1, detail_col, label, fmt_break)
-            elif label == "Splice required":
-                ws.write(r + 1, detail_col, label, fmt_req)
-            elif label == "CableInfo":
-                ws.write(r + 1, detail_col, label, fmt_info)
-            else:
-                # Existing Splice or any other; leave default
-                pass
+            label=str(df.iat[r, c_first])
+            if   label=="Equipment Location": fmt=fmt_loc
+            elif label=="Equipment":          fmt=fmt_equip
+            elif label=="Cable[attach]":      fmt=fmt_cab
+            elif label=="Break Splice":       fmt=fmt_break
+            elif label in ("Splice Required","Splice required"): fmt=fmt_req
+            elif label=="CableInfo":          fmt=fmt_info
+            elif label in ("A Location","Z Location"): fmt=fmt_loc
+            else: fmt=None
+            if fmt is not None:
+                ws.write(r+1, c_first, label, fmt)
 
-            # Optional Google Maps link on the same row
-            if link_col is not None:
-                url = urls[r] if r < len(urls) else None
-                if label == "Equipment Location" and url:
-                    ws.write_url(r + 1, link_col, url, string="Google Maps")
-                else:
-                    ws.write(r + 1, link_col, "")
+            url = gmaps[r] if r < len(gmaps) else None
+            if url:
+                ws.write_url(r+1, c_gmap, url, link_fmt, string="Google Map")
+    return bio.getvalue()
 
-def generate_xlsx(json_path: str | Path, out_xlsx: str | Path) -> pd.DataFrame:
-    """Public entrypoint for the Streamlit button: build the DF and write the xlsx."""
-    df, urls = build_overview_df(Path(json_path))
-    write_styled_excel(df, urls, Path(out_xlsx), sheet="Fibre Trace")
-    return df
+# ---------- top-level helpers used by Streamlit ----------
+def build_trace_and_actions_from_sources(*, json_source: Union[str, IO[bytes], bytes],
+                                         csv_source: Optional[Union[str, IO[bytes], bytes]] = None):
+    """Build the trace from JSON and (optionally) merge actions parsed by fibre_action against the trace.
+       Returns: df, gmaps, stats, a_loc, z_loc
+    """
+    # Load JSON from path/bytes/file-like
+    if isinstance(json_source, (str, Path)):
+        payload = json.loads(Path(json_source).read_text(encoding="utf-8"))
+    elif hasattr(json_source, "read"):
+        payload = json.loads(json_source.read().decode("utf-8"))
+        json_source.seek(0)
+    elif isinstance(json_source, (bytes, bytearray)):
+        payload = json.loads(json_source.decode("utf-8"))
+    else:
+        raise TypeError("Unsupported json_source type")
+
+    base_df, gmaps, ranges, meta, a_loc, z_loc = build_fiber_trace(payload)
+
+    if csv_source is not None:
+        # import fibre_action locally
+        import importlib.util, sys as _sys
+        spec = importlib.util.spec_from_file_location("fiber_action", str(Path(__file__).with_name("fiber_action.py")))
+        fa = importlib.util.module_from_spec(spec)
+        _sys.modules["fiber_action"] = fa
+        spec.loader.exec_module(fa)
+
+        actions_df = fa.compute_fibre_actions(csv_source, json_source=None)
+        out_df, out_gmaps, stats = insert_actions(base_df, gmaps, ranges, meta, actions_df)
+    else:
+        out_df, out_gmaps, stats = base_df, gmaps, {"inserted":0,"adds":0,"removes":0}
+
+    return out_df, out_gmaps, stats, a_loc, z_loc
+
+# --- Compatibility wrapper for legacy callers -----------------------------
+def build_trace_df_and_stats(json_bytes: bytes, csv_bytes: bytes | None):
+    """
+    Legacy adapter that returns (df, stats) only.
+    Internally uses build_trace_and_actions_from_sources (which also computes gmaps/AZ).
+    """
+    df, _gmaps, stats, _a_loc, _z_loc = build_trace_and_actions_from_sources(
+        json_source=json_bytes,
+        csv_source=csv_bytes
+    )
+    return df, stats

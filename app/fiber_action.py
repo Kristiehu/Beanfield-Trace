@@ -11,50 +11,43 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-
 # =========================
-# Pair/Location parsing
+# Regex helpers
 # =========================
-
-# Match a pair like:
-#   "Splice 41121[73 - 84] - 41122[73 - 84]"
-#   "Splice 41121 [73-84] 41122 [73-84]"
 PAIR_RE = re.compile(
-    r'(?P<verb>Splice|BREAK)\s+'
+    r'(?P<verb>Splice|BREAK|Remove\s+splicing)\s+'
     r'(?P<A>[A-Za-z0-9#._/-]+)\s*\[\s*(?P<Ar>[^\]]+?)\s*\]\s*'
     r'(?:-|\s+)?\s*'
     r'(?P<B>[A-Za-z0-9#._/-]+)\s*\[\s*(?P<Br>[^\]]+?)\s*\]',
     re.IGNORECASE,
 )
 
-# Find all "... TOKEN - TOKEN ..." pairs near the tail; we will keep the LAST pair only.
-TAIL_PAIR_RE = re.compile(r'([A-Za-z0-9#._/-]{2,})\s*-\s*([A-Za-z0-9#._/-]{2,})')
-
-# JSON header for a splice box block, e.g. "M#248 : OSP Splice Box - 400D5 : M#248"
 BOX_HEADER_RE = re.compile(r'^\s*([A-Za-z0-9#._/-]{2,})\s*:\s*OSP Splice Box\b.*$', re.IGNORECASE)
-# CA lines like "CA2: PMID: 41121 …" (tolerate odd tokens between 'PMID' and the number)
-CA_PMD_RE = re.compile(r'^\s*CA\d+.*?PMID[^\d]*([0-9]+[0-9A-Z]*)\b', re.IGNORECASE)
-# Lines like "PMID: 41121 … -- Splice -- PMID: 41122 …"
+CA_PMD_RE = re.compile(r'^\s*CA\d+.*?PMID[^\d]*([0-9A-Z]+)\b', re.IGNORECASE)
 PAIR_ORIENT_RE = re.compile(
-    r'^\s*PMID[:]\s*([0-9A-Z]+)\b.*?--\s*Splice\s*--\s*PMID[:]\s*([0-9A-Z]+)\b',
+    r'^\s*PMID[^0-9A-Z]*([0-9A-Z]+)\b.*?--\s*Splice\s*--\s*PMID[^0-9A-Z]*([0-9A-Z]+)\b',
     re.IGNORECASE,
 )
 
+TRAILING_MONTREAL_RE = re.compile(r'\s*-\s*Montreal\s*\(.*?\)\s*$', re.IGNORECASE)
+EQUIP_PREFIX_RE     = re.compile(r'^\(equipment\b.*?\)\.?\s*', re.IGNORECASE)
+
+DASH_NORMALIZER = dict.fromkeys(map(ord, "\u2010\u2011\u2012\u2013\u2014\u2212"), ord("-"))
 
 # =========================
 # CSV reading
 # =========================
 def _read_actions_csv(upload: Union[str, IO[bytes], bytes]) -> pd.DataFrame:
-    """
-    Read the WO CSV and return Action/Description/SAP table (starting at its header if present).
-    """
-    if isinstance(upload, bytes):
-        text = upload.decode("utf-8", "ignore")
-    elif hasattr(upload, "read"):
-        upload.seek(0)
-        text = upload.read().decode("utf-8", "ignore")
-    else:
-        text = open(upload, "r", encoding="utf-8").read()
+    try:
+        if isinstance(upload, bytes):
+            text = upload.decode("utf-8", "ignore")
+        elif hasattr(upload, "read"):
+            upload.seek(0)
+            text = upload.read().decode("utf-8", "ignore")
+        else:
+            text = open(upload, "r", encoding="utf-8").read()
+    except Exception:
+        return pd.DataFrame(columns=["Action", "Description", "SAP"])
 
     lines = text.splitlines()
     hdr_idx = None
@@ -63,40 +56,30 @@ def _read_actions_csv(upload: Union[str, IO[bytes], bytes]) -> pd.DataFrame:
             hdr_idx = i
             break
 
-# Only treat these as valid location tokens in tails
-LOC_TOKEN_RE = re.compile(r'^(?:M#\d+[A-Z]?|D#\d+[A-Z]?|PA\d+|BFMA\d+)$', re.IGNORECASE)
+    try:
+        if hdr_idx is not None:
+            df = pd.read_csv(io.StringIO("\n".join(lines[hdr_idx:])),
+                             dtype=str, keep_default_na=False)
+        else:
+            df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+    except Exception:
+        return pd.DataFrame(columns=["Action", "Description", "SAP"])
 
-def _pick_location_tail(s: str) -> tuple[str, str]:
-    """Return the last 'LocA - LocB' pair where both sides look like real locations."""
-    pairs = TAIL_PAIR_RE.findall(s)
-    for left, right in reversed(pairs):
-        if LOC_TOKEN_RE.match(left) and LOC_TOKEN_RE.match(right):
-            return left, right
-    return "", ""
-
-
-    if hdr_idx is not None:
-        df = pd.read_csv(io.StringIO("\n".join(lines[hdr_idx:])),
-                         dtype=str, keep_default_na=False)
-    else:
-        df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
-
-    # normalize columns
-    cols = [c.strip() for c in df.columns]
     rename = {}
-    for c in df.columns:
+    for c in list(df.columns):
         lc = c.strip().lower()
         if lc == "action": rename[c] = "Action"
         if lc == "description": rename[c] = "Description"
         if lc == "sap": rename[c] = "SAP"
     df = df.rename(columns=rename)
+
     for col in ("Action", "Description"):
         if col not in df.columns:
             df[col] = ""
     if "SAP" not in df.columns:
         df["SAP"] = ""
-    return df[["Action", "Description", "SAP"]].copy()
 
+    return df[["Action", "Description", "SAP"]].copy()
 
 # =========================
 # JSON → CA order maps
@@ -104,14 +87,14 @@ def _pick_location_tail(s: str) -> tuple[str, str]:
 def _extract_connection_blobs(json_source: Optional[Union[str, IO[bytes], bytes]]) -> List[str]:
     if json_source is None:
         return []
-    if isinstance(json_source, bytes):
-        raw = json_source.decode("utf-8", "ignore")
-    elif hasattr(json_source, "read"):
-        json_source.seek(0)
-        raw = json_source.read().decode("utf-8", "ignore")
-    else:
-        raw = open(json_source, "r", encoding="utf-8").read()
     try:
+        if isinstance(json_source, bytes):
+            raw = json_source.decode("utf-8", "ignore")
+        elif hasattr(json_source, "read"):
+            json_source.seek(0)
+            raw = json_source.read().decode("utf-8", "ignore")
+        else:
+            raw = open(json_source, "r", encoding="utf-8").read()
         data = json.loads(raw)
     except Exception:
         return []
@@ -125,15 +108,8 @@ def _extract_connection_blobs(json_source: Optional[Union[str, IO[bytes], bytes]
         pass
     return blobs
 
-
 def _parse_json_for_order(json_source: Optional[Union[str, IO[bytes], bytes]]
                           ) -> Tuple[Dict[str, Dict[str, int]], Dict[str, Set[str]], Dict[frozenset, Tuple[str, str]]]:
-    """
-    Returns:
-      ca_order_by_box: { box_name -> { pmid -> rank } }  # from CA1, CA2, ...
-      boxes_by_pmid:   { pmid -> set(box_name) }
-      pair_orient:     { frozenset({A,B}) -> (A,B) }     # explicit JSON "PMID A -- Splice -- PMID B"
-    """
     ca_order_by_box: Dict[str, Dict[str, int]] = {}
     boxes_by_pmid: Dict[str, Set[str]] = {}
     pair_orient: Dict[frozenset, Tuple[str, str]] = {}
@@ -141,7 +117,8 @@ def _parse_json_for_order(json_source: Optional[Union[str, IO[bytes], bytes]]
     for blob in _extract_connection_blobs(json_source):
         current_box: Optional[str] = None
         order_map: Dict[str, int] = {}
-        for line in blob.splitlines():
+        for raw_line in blob.splitlines():
+            line = raw_line.replace("<COLON>", ":").replace("<COMMA>", ",")
             m = BOX_HEADER_RE.match(line)
             if m:
                 if current_box and order_map and current_box not in ca_order_by_box:
@@ -158,123 +135,103 @@ def _parse_json_for_order(json_source: Optional[Union[str, IO[bytes], bytes]]
                 continue
             m = PAIR_ORIENT_RE.match(line)
             if m:
-                a, b = m.group(1), m.group(2)
-                pair_orient.setdefault(frozenset((a, b))), (a, b)
+                a, b = m.group(1).strip(), m.group(2).strip()
                 pair_orient[frozenset((a, b))] = (a, b)
         if current_box and order_map and current_box not in ca_order_by_box:
             ca_order_by_box[current_box] = dict(order_map)
 
     return ca_order_by_box, boxes_by_pmid, pair_orient
 
+# =========================
+# Normalization helpers
+# =========================
+def _compact_range(r: str) -> str:
+    r = str(r or "").translate(DASH_NORMALIZER)
+    r = re.sub(r"\s*-\s*", "-", r)
+    return r.strip()
 
-def _find_common_box(
-    A: str,
-    B: str,
+def _clean_tail_after(source: str, match_end: int) -> str:
+    tail = source[match_end:]
+    tail = tail.lstrip(" -.,;")
+    tail = EQUIP_PREFIX_RE.sub("", tail)
+    tail = TRAILING_MONTREAL_RE.sub("", tail)
+    tail = re.sub(r"\s+", " ", tail).strip()
+    return tail
+
+def _choose_box_by_pmid_order(
+    A: str, B: str,
     ca_order_by_box: Dict[str, Dict[str, int]],
     boxes_by_pmid: Dict[str, Set[str]],
-    loc_hint: Optional[str],
 ) -> Optional[str]:
-    """
-    Prefer a box that contains BOTH PMIDs.
-    If loc_hint is provided and valid and contains both, use it.
-    If multiple common boxes, prefer one where A<=B by CA order.
-    """
-    if loc_hint and loc_hint in ca_order_by_box:
-        om = ca_order_by_box[loc_hint]
-        if A in om and B in om:
-            return loc_hint
-
     common = boxes_by_pmid.get(A, set()) & boxes_by_pmid.get(B, set())
     if not common:
         return None
     if len(common) == 1:
         return next(iter(common))
-    # choose the first where A comes before (or equal) B
     for bx in common:
         om = ca_order_by_box.get(bx, {})
         if A in om and B in om and om[A] <= om[B]:
             return bx
-    # otherwise take a stable one
     return sorted(common)[0]
 
-
-# =========================
-# Normalization / Color
-# =========================
 def _normalize_desc(action: str, desc: str,
                     ca_order_by_box: Dict[str, Dict[str, int]],
                     boxes_by_pmid: Dict[str, Set[str]],
                     pair_orient: Dict[frozenset, Tuple[str, str]]) -> str:
-    """
-    Parse any messy description, enforce pair order by CA list, and emit:
-      "Splice 41121 [73-84] 41122 [73-84] M#248 - M#248"
-      "BREAK  35289 [3-4]  35116 [3-4]  M#1189A - PA27014"
-    """
     s = str(desc or "")
+    s = s.translate(DASH_NORMALIZER)
+    s = re.sub(r"\s+", " ", s).strip()
+
     m = PAIR_RE.search(s)
     if not m:
-        return s  # leave non-pair lines untouched
+        return s
 
-    verb = m.group("verb")
-    A, Ar, B, Br = m.group("A"), m.group("Ar"), m.group("B"), m.group("Br")
-    # Decide verb from action too (e.g., "Remove (E)" → BREAK)
-    if "remove" in (action or "").lower() or "break" in (action or "").lower():
+    if "remove" in (action or "").lower() or m.group("verb").lower().startswith("remove"):
+        verb = "BREAK"
+    elif "break" in (action or "").lower():
         verb = "BREAK"
     else:
         verb = "Splice"
 
-    # find last "TOKEN - TOKEN" tail pair → location A/B
-    locA = locB = ""
-    tail_pairs = TAIL_PAIR_RE.findall(s)
-    if tail_pairs:
+    A, B = m.group("A"), m.group("B")
+    Ar, Br = _compact_range(m.group("Ar")), _compact_range(m.group("Br"))
 
-
-        # find real location tail (ignore 'Box - 400D5' etc.)
-        locA, locB = _pick_location_tail(s)
-    loc_hint = locA if (locA == locB and locA) else None
-
-    # Order by CA list within chosen box
-    box = _find_common_box(A, B, ca_order_by_box, boxes_by_pmid, loc_hint)
+    box = _choose_box_by_pmid_order(A, B, ca_order_by_box, boxes_by_pmid)
     if box:
         om = ca_order_by_box.get(box, {})
         if A in om and B in om and om[A] > om[B]:
             A, B, Ar, Br = B, A, Br, Ar
     else:
-        # fallback 1: explicit JSON orientation, if seen
         key = frozenset((A, B))
         if key in pair_orient:
             a, b = pair_orient[key]
             if {A, B} == {a, b} and A == b:
                 A, B, Ar, Br = B, A, Br, Ar
-        else:
-            # fallback 2: if only one PMID is known anywhere, keep the known one on the left
-            a_boxes = boxes_by_pmid.get(A, set())
-            b_boxes = boxes_by_pmid.get(B, set())
-            if a_boxes and not b_boxes:
-                pass  # A already on the left
-            elif b_boxes and not a_boxes:
-                A, B, Ar, Br = B, A, Br, Ar
 
-    # Build normalized output; keep location pair if available
     core = f"{verb} {A} [{Ar}] {B} [{Br}]"
-    if locA and locB:
-        core += f" {locA} - {locB}"
+    tail = _clean_tail_after(s, m.end())
+    if tail:
+        core = f"{core} {tail}"
     return core
 
+# ---------- color helpers (fix: don't use startswith; Action has indices like '0: Add') ----------
+BLUE_GREEN_XLSX = "B2DFDB"  # light blue-green fill for Add/Splice
+PURPLE_XLSX     = "E1BEE7"  # light purple fill for Remove/BREAK
 
-
-def _assign_color(action: str, description: str) -> str:
-    """
-    RGB hex without '#':
-      BREAK -> red,  Splice -> orange.
-      (You can expand rules later for equipment/cableinfo rows if those are included.)
-    """
+def _is_add(action: str) -> bool:
     a = (action or "").lower()
-    d = (description or "").lower()
-    if "break" in d or "remove" in a:
-        return "FF6666"  # red
-    return "FFA64D"      # orange (Splice default)
+    return "add" in a
 
+def _is_remove(action: str) -> bool:
+    a = (action or "").lower()
+    return ("remove" in a) or ("break" in a)
+
+def _assign_excel_fill(action: str, description: str) -> str:
+    if _is_remove(action) or str(description).upper().startswith("BREAK"):
+        return PURPLE_XLSX
+    if _is_add(action) or str(description).upper().startswith("SPLICE"):
+        return BLUE_GREEN_XLSX
+    return "FFFFFF"  # safe default
 
 # =========================
 # Public API
@@ -282,33 +239,30 @@ def _assign_color(action: str, description: str) -> str:
 def compute_fibre_actions(
     csv_source: Union[str, IO[bytes], bytes],
     json_source: Optional[Union[str, IO[bytes], bytes]] = None,
-    **_compat_kwargs,  # absorb legacy kwargs like enrich_from_json
+    **_compat_kwargs,
 ) -> pd.DataFrame:
-    """
-    Build Fibre Action table:
-      - Parse CSV Action/Description/SAP.
-      - Reorder splice/break pairs using JSON CA order.
-      - Normalize Description to: "<Splice|BREAK> A [ra] B [rb] LeftLoc - RightLoc".
-      - Add Color column for Excel styling.
-    """
-    df = _read_actions_csv(csv_source)
-    if df.empty:
-        return df
+    try:
+        df = _read_actions_csv(csv_source)
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return pd.DataFrame(columns=["Action", "Description", "SAP", "Color"])
 
-    ca_order_by_box, boxes_by_pmid, pair_orient = _parse_json_for_order(json_source)
+        ca_order_by_box, boxes_by_pmid, pair_orient = _parse_json_for_order(json_source)
 
-    # Only rows that contain "Splice" or "BREAK" are reformatted; others pass through
-    mask = df["Description"].str.contains(r"\b(Splice|BREAK|Remove)\b", case=False, regex=True)
-    df = df.loc[mask].reset_index(drop=True)
+        mask = df["Description"].fillna("").str.contains(r"\b(Splice|BREAK|Remove)\b", case=False, regex=True)
+        df = df.loc[mask].reset_index(drop=True)
 
-    df["Description"] = [
-        _normalize_desc(a, d, ca_order_by_box, boxes_by_pmid, pair_orient)
-        for a, d in zip(df["Action"], df["Description"])
-    ]
-    df["Color"] = [_assign_color(a, d) for a, d in zip(df["Action"], df["Description"])]
+        df["Description"] = [
+            _normalize_desc(a, d, ca_order_by_box, boxes_by_pmid, pair_orient)
+            for a, d in zip(df["Action"], df["Description"])
+        ]
+        df["Color"] = [_assign_excel_fill(a, d) for a, d in zip(df["Action"], df["Description"])]
 
-    return df[["Action", "Description", "SAP", "Color"]]
-
+        for col in ("Action", "Description", "SAP", "Color"):
+            if col not in df.columns:
+                df[col] = ""
+        return df[["Action", "Description", "SAP", "Color"]]
+    except Exception:
+        return pd.DataFrame(columns=["Action", "Description", "SAP", "Color"])
 
 # =========================
 # Excel export (color rows)
@@ -321,22 +275,19 @@ def actions_to_workbook_bytes(df: pd.DataFrame, *, sheet_name: str = "Fibre Acti
     headers = ["Action", "Description", "SAP"]
     ws.append(headers)
 
-    # Styles
     bold = Font(bold=True)
-    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    top_left = Alignment(vertical="top", wrap_text=True)
+    center = Alignment(horizontal="center", vertical="center")
+    wrap = Alignment(vertical="top", wrap_text=True)
     box = Border(left=Side(style="thin"), right=Side(style="thin"),
                  top=Side(style="thin"), bottom=Side(style="thin"))
     header_fill = PatternFill("solid", fgColor="DDDDDD")
 
-    # Header cells
     for cell in ws[1]:
         cell.font = bold
         cell.alignment = center
         cell.border = box
         cell.fill = header_fill
 
-    # Data rows with color
     for _, r in df.iterrows():
         ws.append([r.get("Action", ""), r.get("Description", ""), r.get("SAP", "")])
         row_idx = ws.max_row
@@ -344,10 +295,10 @@ def actions_to_workbook_bytes(df: pd.DataFrame, *, sheet_name: str = "Fibre Acti
         row_fill = PatternFill("solid", fgColor=fill_clr)
         for cell in ws[row_idx]:
             cell.border = box
-            cell.alignment = top_left
+            cell.alignment = wrap
             cell.fill = row_fill
 
-    # Auto-width
+    # simple auto-width
     for i, col in enumerate(headers, start=1):
         series = [str(col)] + [str(v) for v in df[col]]
         width = min(max(len(x) for x in series) + 2, 100)

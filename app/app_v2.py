@@ -87,7 +87,9 @@ else:
     # use functions from this script:
     wo_kv = _kv_from_wo(wo_df)
     actions_df = _actions_from_wo(wo_df)
+    st.session_state["fiber_actions_df"] = actions_df
     details_df = _details_from_json(up_json)
+
     # Save latest into session for reuse by all panels
     if up_csv:  st.session_state["wo_csv_file"]  = up_csv
     if up_json: st.session_state["wo_json_file"] = up_json
@@ -202,12 +204,15 @@ st.subheader("2) Generate outputs")
 # 3. Export the DataFrame to an Excel file and offer it for download.
 from fiber_action import compute_fibre_actions, actions_to_workbook_bytes
 
+ADD_PREVIEW_HEX    = "#26A69A"  # teal-ish
+REMOVE_PREVIEW_HEX = "#8E24AA"  # purple
+
 def _style_add_remove(row: pd.Series) -> list[str]:
     a = str(row.get("Action", "")).lower()
-    if "add" in a:
-        return ["background-color: #009688; color: #FFFFFF"] * len(row)  # blue-green
-    if "remove" in a:
-        return ["background-color: #8e24aa; color: #FFFFFF"] * len(row)  # purple
+    if "remove" in a or "break" in a:
+        return [f"background-color: {REMOVE_PREVIEW_HEX}; color: #FFFFFF"] * len(row)
+    if "add" in a or str(row.get("Description","")).upper().startswith("SPLICE"):
+        return [f"background-color: {ADD_PREVIEW_HEX}; color: #FFFFFF"] * len(row)
     return [""] * len(row)
 
 with st.container(border=True):
@@ -215,34 +220,37 @@ with st.container(border=True):
 
     if st.button("Generate", type="primary", key="btn_fa", disabled=not ready):
         csv_b, json_b, ok = require_inputs(need_csv=True, need_json=True)
-        if ok:
+
+        if not ok:
+            st.error("CSV and JSON are both required.")
+        else:
             try:
                 df = compute_fibre_actions(csv_b, json_b)
+
                 if df.empty:
-                    st.warning("No splice/break actions detected.")
+                    st.warning("No splice/break actions detected in the CSV.")
                 else:
-                    st.success(f"Built {len(df)} Fibre Action rows (CA-ordered, normalized).")
+                    st.success(f"Built {len(df)} Fibre Action rows (CA-ordered).")
                     st.session_state["fa_df"] = df
 
-                    # === Preview with row colors (Add = dark green, Remove = red) ===
+                    # Colored preview
                     preview = df[["Action", "Description"]].copy()
-                    styled = preview.style.apply(_style_add_remove, axis=1)
-                    st.dataframe(styled, use_container_width=True, hide_index=True)
+                    st.dataframe(preview.style.apply(_style_add_remove, axis=1),
+                                 use_container_width=True, hide_index=True)
 
-                    # Download: keeps your Excel coloring from fiber_action.py
-                    xlsx_bytes = actions_to_workbook_bytes(df)
+                    # Download Excel (rows already colored in bytes)
+                    xlsx = actions_to_workbook_bytes(df)
                     st.download_button(
-                        label="Download Fibre Action.xlsx",
-                        data=xlsx_bytes,
+                        "Download Fibre_Action.xlsx",
+                        data=xlsx,
                         file_name="Fibre_Action.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_fa",
+                        type="primary",
                     )
             except Exception as e:
                 st.error(f"Failed to build Fibre Action: {e}")
-# ------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
 
 # --------------------- Fibre Trace Button -------------------------------
@@ -251,43 +259,116 @@ with st.container(border=True):
 # Overview:
 # 1. Read the uploaded JSON file.
 # 2. Use `build_fiber_trace` to create a DataFrame representing the fibre trace.
-#3. Export the DataFrame to an Excel file and offer it for download.
-from fiber_trace import generate_xlsx 
+# 3. Export the DataFrame to an Excel file and offer it for download.
+# --------------------- Fibre Trace Button -------------------------------
+# --------------------- Fibre Trace Button -------------------------------
+import json
+import pandas as pd
+import streamlit as st
+from fiber_trace import (
+    build_trace_and_actions_from_sources,  # gives df + gmaps (no content change)
+    write_xlsx_bytes,
+)
+
+# ---- Color palette (matches your output) ----
+_COLOR_MAP = {
+    "equipment": "#006400",
+    "equipment location": "#006400",
+    "a location": "#006400",
+    "z location": "#006400",
+    "cable[attach]": "#32CD32",
+    "break splice": "#D00000",
+    "splice required": "#FF8C00",
+    "cableinfo": "#1E90FF",
+}
+
+def _style_first_col(df: pd.DataFrame) -> "pd.io.formats.style.Styler":
+    def _color_for(v):
+        s = (str(v) if v is not None else "").strip().lower()
+        for k, c in _COLOR_MAP.items():
+            if s == k or s.startswith(k):
+                return c
+        return "inherit"
+    def _row_style(row: pd.Series):
+        return [f"color: {_color_for(row.iloc[0])}; font-weight: 600;"] + ["" for _ in row[1:]]
+    return df.style.apply(_row_style, axis=1)
+
+def _to_bytes(uploaded):
+    if uploaded is None:
+        return None
+    if hasattr(uploaded, "getvalue"):
+        b = uploaded.getvalue()
+        try: uploaded.seek(0)
+        except Exception: pass
+        return b
+    if isinstance(uploaded, (bytes, bytearray)):
+        return bytes(uploaded)
+    if isinstance(uploaded, dict):
+        return json.dumps(uploaded).encode("utf-8")
+    if hasattr(uploaded, "read"):
+        b = uploaded.read()
+        try: uploaded.seek(0)
+        except Exception: pass
+        return b
+    return None
 
 with st.container(border=True):
-    st.markdown("Fibre Trace")
+    st.markdown("### Fibre Trace")
 
     if st.button("Generate", type="primary", key="btn_fibre_trace", disabled=not ready):
         try:
-            # Save uploaded JSON to a temp file
-            up_json.seek(0)
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-                tmp.write(up_json.read())
-                json_path = Path(tmp.name)
+            # 🔒 Build EXACTLY as your pipeline defines it (no mutations)
+            json_b = _to_bytes(up_json)
+            csv_b  = _to_bytes(up_csv) if 'up_csv' in locals() or 'up_csv' in globals() else None
 
-            # Output path (temp)
-            out_xlsx = json_path.with_name("fibre_trace.xlsx")
+            df, gmaps, stats, a_loc, z_loc = build_trace_and_actions_from_sources(
+                json_source=json_b,
+                csv_source=csv_b
+            )
+            # df is your final content (with actions). DO NOT modify it.
 
-            # Generate Excel only (no CSV/KML)
-            df_trace = generate_xlsx(json_path, out_xlsx)
+            # ---------- Preview (links + first-column color) ----------
+            # Prepare a *display* copy so we can show clickable Google Map links only in UI
+            display_df = df.copy()
+            if "Google Map" in display_df.columns:
+                # Fill with actual URLs where available; keep blanks otherwise.
+                urls = []
+                for i in range(len(display_df)):
+                    urls.append(gmaps[i] if i < len(gmaps) and gmaps[i] else "")
+                display_df["Google Map"] = urls
 
-            # Download Excel
-            with open(out_xlsx, "rb") as fh:
-                st.download_button(
-                    "Download Fibre Trace (Excel)",
-                    fh,
-                    file_name="fibre_trace.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_fibre_trace_xlsx",
+                # Use LinkColumn so the cell shows as a clickable "Google Map"
+                st.dataframe(
+                    _style_first_col(display_df),
+                    use_container_width=True,
+                    column_config={
+                        "Google Map": st.column_config.LinkColumn(
+                            "Google Map",
+                            display_text="Google Map"
+                        )
+                    },
                 )
+            else:
+                # Fallback: no Google Map column present; just colorize
+                st.dataframe(_style_first_col(display_df), use_container_width=True)
 
-            # Preview (optional)
-            st.success(f"Fibre Trace generated: {len(df_trace)} rows.")
-            st.dataframe(df_trace, use_container_width=True, hide_index=True)
+            # ---------- Downloads (Excel preserves map links via write_xlsx_bytes) ----------
+            xlsx_bytes = write_xlsx_bytes(df, gmaps=gmaps)
+            st.download_button(
+                "Download Fibre Trace (Excel)",
+                data=xlsx_bytes,
+                file_name="fibre_trace.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_ft_xlsx",
+            )
 
         except Exception as e:
             st.error(f"Failed to generate Fibre Trace: {e}")
-#-------------------------------------------------------------------------
+
+
+
+# -----------------------------------------------------------------------
+
 
 # --------------------- Activity Overview Map Button ---------------------
 # Parse the 'Connections' strings from the JSON, then parse each line into a table.
@@ -540,7 +621,9 @@ with st.container(border=True):
 
         except Exception as e:
             st.error(f"Failed to generate Activity Overview Map: {e}")
+
 # ------------------------------------------------------------------------  
+
 
 # --------------------- Generate KML Button ------------------------------
 # Generate a colorized KML from the WO.csv and the JSON.

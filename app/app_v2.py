@@ -14,8 +14,7 @@ from helper import (
     placemarks_from_wo_df,
     placemarks_from_payload,
     dedupe_placemarks,
-    read_uploaded_table,
-)
+    read_uploaded_table,)
 
 # --------------------------- Helpers ---------------------------
 # parses lines like: "... Address: ... () : 43.644719, -79.385046 :  : something"
@@ -655,3 +654,39 @@ with st.container(border=True):
             type="secondary",
         )
 # ------------------------------------------------------------------------        
+
+# --------------------- Trace Booklet ---------------------
+from activities import build_trace_booklet
+
+# Map template detection keys → on-disk PNG/JPG paths (add freely later)
+TEMPLATE_REGISTRY = {
+    # 400D5 & 400D
+    "400D5": "ref/400D.png",
+    "400D": "ref/400D.png",
+    # 450D6 & 450D
+    "450D6": "ref/450D.png",
+    "450D": "ref/450D.jpg",
+    # ...
+    # "600D": "ref/600D.png",
+}
+
+with st.container(border=True):
+    st.markdown("### Trace Booklet")
+    st.caption("Cover page with index + 1 sheet per Connection; inserts splice-top PNG and Google Map links.")
+
+    if st.button("Generate Booklet", type="primary", key="btn_trace_booklet", disabled=not ready):
+        try:
+            _out = require_inputs(up_csv, up_json)  # your existing helper returning csv/json bytes
+            csv_bytes, json_bytes = (_out[0], _out[1]) if isinstance(_out, tuple) else (_out["csv"], _out["json"])
+            xlsx_io = build_trace_booklet(csv_bytes, json_bytes, TEMPLATE_REGISTRY)
+
+            st.success("Booklet ready.")
+            st.download_button(
+                "⬇️ Download Trace Booklet (.xlsx)",
+                data=xlsx_io.getvalue(),
+                file_name="trace_booklet.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            st.info("To add new splice templates later, just expand TEMPLATE_REGISTRY (no other changes needed).")
+        except Exception as e:
+            st.error(f"Failed to generate Trace Booklet: {e}")

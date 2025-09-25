@@ -10,14 +10,17 @@
 - `trace_report.py` — Input Files Upload & Parse Logic
   
 ### Main Logic
-- `remove_add_algo.py` — Function 01 -  Fiber actions (Remove & Add)
-- `fibre_trace.py` — Function 02 -  **Core Fibre Trace Algorithms** *
-- `parse_device_sheet.py` — Function 03 - Activity Overview Map
-- `_to_kml.py` — Function 04 - KML Map Generation
+- [x] `fiber_action.py` — Function 01 -  Fiber actions (Remove & Add)
+- [x] `fibre_trace.py` — Function 02 -  **Core Fibre Trace Algorithms** *
+- [x] `parse_device_sheet.py` — Function 03 - Activity Overview Map
+- [x] `_to_kml.py` — Function 04 - KML Map Generation
+- [ ] `activities.py` - Under development
+- [ ] `cover_page.py` - Under development
 
 
 ### Helper
 - `kml_helper.py` — Helper (KML Gneneration)
+- `run_clean_csv.py`, `run_clean_json.py` - File Cleanup & Preview
 
 ### Input
 - `WO[Number].csv` — Example work order CSV
@@ -59,3 +62,4 @@ python _to_kml.py --wo WO24218.json --csv WO24218.csv --out WO24218.kml
 python remove_add_algo.py --in changes.csv --out output.csv
 ```
 
+![myImage](https://media.giphy.com/media/XRB1uf2F9bGOA/giphy.gif)
